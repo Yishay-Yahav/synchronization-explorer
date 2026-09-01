@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import pickle
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -307,7 +308,13 @@ def run_single_experiment(
         record_evolution=True,
     )
 
-    # 3. Generate and save 5 plots
+    # 3. Save serialized BasinData object for interactive inspection with slider
+    data_pkl_path = os.path.join(target_dir, "basin_data.pkl")
+    with open(data_pkl_path, "wb") as f:
+        pickle.dump(basin_data, f)
+    print(f"[SAVED] Serialized basin data saved to: {data_pkl_path}")
+
+    # 4. Generate and save 5 plots
     file_prefix = f"{param_tag}_tau{int(max_tau)}_res{resolution}x{resolution}"
 
     # Plot 1: Attractors Map (discrete)
@@ -330,7 +337,7 @@ def run_single_experiment(
     path_modal = os.path.join(target_dir, f"{file_prefix}_5_final_modal_envelopes.png")
     plot_final_modal_envelopes(basin_data, save_path=path_modal, title=exp_config["title"])
 
-    print(f"[DONE] Completed Experiment {exp_config['id']}! 5 plots saved in: {target_dir}\n")
+    print(f"[DONE] Completed Experiment {exp_config['id']}! 5 plots + interactive data saved in: {target_dir}\n")
 
 
 def run_all_experiments(
@@ -367,7 +374,7 @@ def run_all_experiments(
     t_total = time.perf_counter() - t_start
     print("\n" + "=" * 60)
     print(f"[ALL COMPLETE] All 8 experiments finished in {t_total:.2f}s ({t_total/60:.1f} mins)!")
-    print(f"[SUMMARY] Total 40 figures saved across 8 subdirectories in '{base_run_dir}/'.")
+    print(f"[SUMMARY] Total 40 figures + 8 interactive data models saved in '{base_run_dir}/'.")
     print("=" * 60)
 
 
