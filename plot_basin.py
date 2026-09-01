@@ -32,18 +32,18 @@ LABEL_TO_ID = {
 
 ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
-# צבעי מפת האגנים התואמים בדיוק למאמר (Fig. 2):
-# 0: other / unsettled -> אפור בהיר
-# 1: in-phase -> כחול (#0072BD)
-# 2: anti-phase -> צהוב/זהב (#E69F00)
-# 3: stationary beating -> אדום/חלודה (#D9531E)
-# 4: zero -> שחור (#000000)
+# Colors matching publication Fig. 2 standard:
+# 0: other / unsettled -> Light Gray
+# 1: in-phase -> Blue (#0072BD)
+# 2: anti-phase -> Yellow/Gold (#E69F00)
+# 3: stationary beating -> Red/Rust (#D9531E)
+# 4: zero -> Black (#000000)
 COLORS = [
-    "#b0bec5",  # 0: other / unsettled (אפור בהיר)
-    "#0072bd",  # 1: in-phase (כחול)
-    "#e69f00",  # 2: anti-phase (צהוב/זהב)
-    "#d9531e",  # 3: stationary beating (אדום/חלודה)
-    "#000000",  # 4: zero response (שחור)
+    "#b0bec5",  # 0: other / unsettled (Light Gray)
+    "#0072bd",  # 1: in-phase (Blue)
+    "#e69f00",  # 2: anti-phase (Yellow/Gold)
+    "#d9531e",  # 3: stationary beating (Red/Rust)
+    "#000000",  # 4: zero response (Black)
 ]
 BASIN_CMAP = ListedColormap(COLORS)
 BASIN_NORM = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5], BASIN_CMAP.N)
@@ -56,7 +56,7 @@ def generate_grid(
     v1: float = 0.0,
     v2: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, list[list[float]]]:
-    """מייצרת רשת 2D של תנאי התחלה"""
+    """Generates a 2D meshgrid of initial conditions."""
     y1_vals = np.linspace(y1_range[0], y1_range[1], resolution)
     y2_vals = np.linspace(y2_range[0], y2_range[1], resolution)
     Y1, Y2 = np.meshgrid(y1_vals, y2_vals)
@@ -70,7 +70,7 @@ def generate_grid(
 
 
 class BasinData:
-    """מבנה נתונים המחזיק את תוצאות סריקת מפת האגנים"""
+    """Container holding 2D grid results, classifications, and time snapshots."""
     def __init__(
         self,
         system_eq: SystemEquation,
@@ -88,7 +88,7 @@ class BasinData:
         self.final_windows = final_windows
         self.snapshot_grids = snapshot_grids or []
 
-        # מטריצות 2D סופיות
+        # 2D result matrices
         self.label_grid = np.zeros((self.resolution, self.resolution), dtype=int)
         self.sync_grid = np.zeros((self.resolution, self.resolution), dtype=float)
         self.loc_grid = np.zeros((self.resolution, self.resolution), dtype=float)
@@ -120,9 +120,7 @@ def compute_basin(
     chunk_tau: float = 3.0,
     record_evolution: bool = True,
 ) -> BasinData:
-    """
-    מחשבת מפת אגנים מלאה במקביל על פני מספר מעבדים.
-    """
+    """Computes a 2D basin map in parallel across CPU workers."""
     Y1, Y2, ics = generate_grid(y1_range, y2_range, resolution, v1, v2)
     n_points = len(ics)
 
@@ -147,7 +145,7 @@ def compute_basin(
 
     classes = classify(windows)
 
-    # מעקב אחר התפתחות בזמן עבור הסליידר (אם נדרש)
+    # Record time evolution snapshots for the time slider
     snapshot_grids = []
     if record_evolution:
         eps = getattr(system_eq, "eps", 0.001)
@@ -179,11 +177,11 @@ def plot_basin(
     save_path: str | None = None,
 ) -> plt.Figure:
     """
-    מציגה את מפת האגנים ב-Matplotlib עם התאמה מלאה ל-Fig. 2:
-    - כחול = In-Phase
-    - צהוב = Anti-Phase
-    - אדום = Stationary Beating
-    - שחור = Zero
+    Displays the 2D basin map in Matplotlib matching Fig. 2 standard:
+    - Blue = In-Phase
+    - Yellow = Anti-Phase
+    - Red = Stationary Beating
+    - Black = Zero
     """
     fig = plt.figure(figsize=(9, 9))
     fig.canvas.manager.set_window_title(f"2D Basin of Attraction - {basin_data.system_eq.model.upper()}")
@@ -209,7 +207,7 @@ def plot_basin(
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label("Convergence Time t")
         title_mode = "Convergence Time Map"
-    else:  # "attractor" (תואם בדיוק ל-Fig 2)
+    else:  # "attractor" (matches Fig 2)
         im = ax.imshow(basin_data.label_grid, origin="lower", extent=extent, cmap=BASIN_CMAP, norm=BASIN_NORM)
         cbar = fig.colorbar(im, ax=ax, ticks=[0, 1, 2, 3, 4], fraction=0.046, pad=0.04)
         cbar.ax.set_yticklabels([
@@ -227,7 +225,7 @@ def plot_basin(
     ax.set_xlim(y1_min, y1_max)
     ax.set_ylim(y2_min, y2_max)
 
-    # סליידר זמן בתחתית החלון
+    # Interactive time slider
     slider_ax = fig.add_axes([0.18, 0.05, 0.60, 0.035])
     if basin_data.snapshot_grids:
         max_snap = len(basin_data.snapshot_grids) - 1
@@ -242,7 +240,7 @@ def plot_basin(
 
         time_slider.on_changed(update_time)
 
-    # אינטראקציה: לחיצה על נקודה במפה פותחת את גרף המסלול שלה
+    # Click-to-Trajectory interaction
     def on_click(event):
         if event.inaxes == ax and event.button == 1:
             clicked_y1 = round(float(event.xdata), 3)

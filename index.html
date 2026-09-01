@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coupled Oscillators Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Navigation & Header -->
+  <header class="app-header">
+    <div class="logo-area">
+      <div class="logo-icon">⚡</div>
+      <div>
+        <h1>Synchronization Explorer <span class="badge-version">v2.0</span></h1>
+        <p class="subtitle">Coupled Oscillators • Rayleigh, Van der Pol & Duffing Localization</p>
+      </div>
+    </div>
+    <div class="header-status">
+      <span class="status-indicator online"></span>
+      <span id="server-status-text">Local Numba JIT Solver Active</span>
+    </div>
+  </header>
+
+  <!-- Main Container Layout -->
+  <div class="app-layout">
+
+    <!-- Sidebar: All Parameters Control Panel -->
+    <aside class="control-panel">
+      <div class="panel-header">
+        <h2>⚙️ Parameters & Solver</h2>
+        <button id="btn-run" class="btn-primary">▶ Run Simulation</button>
+      </div>
+
+      <div class="panel-scroll">
+        <!-- 1. Physical Model & Coupling -->
+        <div class="control-group">
+          <label class="group-title">1. Physical Model & Coupling</label>
+          <div class="input-row">
+            <label for="param-model">Equation Type (Nonlinearity):</label>
+            <select id="param-model" class="input-select">
+              <option value="rayleigh" selected>Rayleigh (Velocity damping v)</option>
+              <option value="vdp">Van der Pol (Displacement damping y)</option>
+              <option value="none">None (Linear oscillator)</option>
+            </select>
+          </div>
+          <div class="input-row">
+            <label for="param-coupling">Coupling Mode:</label>
+            <select id="param-coupling" class="input-select">
+              <option value="linear" selected>Linear: ε·(y₁ - y₂)</option>
+              <option value="none">None (Uncoupled)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 2. Physical Parameters -->
+        <div class="control-group">
+          <label class="group-title">2. Physical Parameters</label>
+          <div class="input-grid">
+            <div class="input-field" id="field-eps">
+              <label for="param-eps">Epsilon (ε):</label>
+              <input type="number" id="param-eps" value="0.001" step="0.0005" min="0.0001">
+            </div>
+            <div class="input-field" id="field-delta">
+              <label for="param-delta">Delta (δ):</label>
+              <input type="number" id="param-delta" value="0.1" step="0.02" min="0.0">
+            </div>
+            <div class="input-field" id="field-eta">
+              <label for="param-eta">Eta (η):</label>
+              <input type="number" id="param-eta" value="0.15" step="0.02" min="0.0">
+            </div>
+            <div class="input-field" id="field-duffing">
+              <label for="param-duffing">Duffing (Cubic):</label>
+              <input type="number" id="param-duffing" value="0.0" step="0.1" min="0.0" title="Localization">
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Initial Conditions -->
+        <div class="control-group">
+          <label class="group-title">3. Initial Conditions [y1, v1, y2, v2]</label>
+          <div class="input-grid">
+            <div class="input-field">
+              <label for="param-y1">y₁(0):</label>
+              <input type="number" id="param-y1" value="2.0" step="0.2">
+            </div>
+            <div class="input-field">
+              <label for="param-v1">v₁(0):</label>
+              <input type="number" id="param-v1" value="0.0" step="0.2">
+            </div>
+            <div class="input-field">
+              <label for="param-y2">y₂(0):</label>
+              <input type="number" id="param-y2" value="0.0" step="0.2">
+            </div>
+            <div class="input-field">
+              <label for="param-v2">v₂(0):</label>
+              <input type="number" id="param-v2" value="0.0" step="0.2">
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Solver Settings -->
+        <div class="control-group">
+          <label class="group-title">4. Numerical Solver Settings</label>
+          <div class="input-row">
+            <label for="param-method">Integration Method:</label>
+            <select id="param-method" class="input-select">
+              <option value="numba_rk4" selected>Numba RK4 (JIT compiled, fast)</option>
+              <option value="dop853">SciPy DOP853 (8th-order adaptive)</option>
+              <option value="rk45">SciPy RK45 (5th-order adaptive)</option>
+            </select>
+          </div>
+
+          <div class="input-row toggle-row">
+            <label for="param-adaptive">Adaptive Mode (Auto-stop on convergence):</label>
+            <input type="checkbox" id="param-adaptive" checked class="input-toggle">
+          </div>
+
+          <div class="input-grid">
+            <div class="input-field">
+              <label for="param-max-tau">Max Time (max τ):</label>
+              <input type="number" id="param-max-tau" value="30.0" step="5" min="5">
+            </div>
+            <div class="input-field">
+              <label for="param-chunk-tau">Chunk Size (chunk τ):</label>
+              <input type="number" id="param-chunk-tau" value="3.0" step="1" min="1">
+            </div>
+            <div class="input-field">
+              <label for="param-slope-tol">Slope Tol (slope_tol):</label>
+              <input type="number" id="param-slope-tol" value="0.00002" step="0.00001">
+            </div>
+            <div class="input-field">
+              <label for="param-rk4-dt">RK4 Step (dt):</label>
+              <input type="number" id="param-rk4-dt" value="0.05" step="0.01">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Main Workspace Area -->
+    <main class="main-content">
+
+      <!-- Time Scrubber Card -->
+      <section class="time-scrubber-card">
+        <div class="scrubber-header">
+          <div class="scrubber-title">
+            <span class="icon">⏱️</span>
+            <h3>Time Evolution Scrubber (Time Slider)</h3>
+          </div>
+          <div class="time-readout">
+            <span class="readout-item">Physical Time: <strong id="val-curr-time">t = 0.0</strong></span>
+            <span class="readout-item">Slow Time: <strong id="val-curr-tau">τ = 0.0</strong></span>
+            <span class="readout-item">Step: <strong id="val-curr-step">0 / 0</strong></span>
+          </div>
+        </div>
+        <div class="slider-container">
+          <input type="range" id="time-slider" min="0" max="10" value="10" step="1" class="custom-range-slider">
+        </div>
+      </section>
+
+      <!-- Live Dynamic Classification KPI Bar -->
+      <section class="kpi-banner">
+        <div class="kpi-item label-kpi">
+          <span class="kpi-title">Current Attractor Classification:</span>
+          <div id="live-label-badge" class="badge-attractor badge-beating">
+            Stationary Beating
+          </div>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-title">Sync Index</span>
+          <span id="kpi-sync-index" class="kpi-value">0.500</span>
+          <span class="kpi-sub">1.0=IP | 0.5=Beating | 0.0=AP</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-title">Beating Purity</span>
+          <span id="kpi-beating-purity" class="kpi-value">1.000</span>
+          <span class="kpi-sub">1.0=Pure Beating</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-title">Localization</span>
+          <span id="kpi-localization" class="kpi-value">0.500</span>
+          <span class="kpi-sub">0.5=Equal | 1.0=Osc 1</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-title">RMS Amplitude</span>
+          <span id="kpi-rms" class="kpi-value">1.871</span>
+          <span class="kpi-sub">Total Oscillation Energy</span>
+        </div>
+        <div class="kpi-item">
+          <span class="kpi-title">Stability Status</span>
+          <span id="kpi-stability" class="kpi-value text-success">Stationary & Stable</span>
+          <span id="kpi-slope" class="kpi-sub">Slope: 1.12e-06</span>
+        </div>
+      </section>
+
+      <!-- Charts Grid -->
+      <div class="charts-grid">
+        <!-- Chart 1: Trajectory in Time -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <h4>Physical Trajectory: y₁(t) and y₂(t)</h4>
+          </div>
+          <div class="chart-canvas-wrapper">
+            <canvas id="chart-trajectory"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Modal Envelopes -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <h4>Modal Envelopes: |μ₀(τ)| and |μ₁(τ)|</h4>
+          </div>
+          <div class="chart-canvas-wrapper">
+            <canvas id="chart-envelopes"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 3: Phase Portrait -->
+        <div class="chart-card full-width">
+          <div class="chart-header">
+            <h4>Phase Portrait: Velocity vs Displacement (y₁, v₁)</h4>
+          </div>
+          <div class="chart-canvas-wrapper phase-wrapper">
+            <canvas id="chart-phase"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -9,6 +9,11 @@ Supported Models:
 Coupling Modes:
 - "linear": eps * (y1 - y2)
 - "none": uncoupled (c12 = 0)
+
+Supported Solver Methods:
+- "numba_rk4": JIT-compiled Runge-Kutta 4th order (high-speed machine code, default)
+- "dop853": SciPy 8th-order adaptive Runge-Kutta
+- "rk45": SciPy 5th-order adaptive Runge-Kutta
 """
 
 from __future__ import annotations
@@ -24,32 +29,32 @@ from equations import SystemEquation
 
 @dataclass
 class SolutionWindow:
-    """תוצאת החלון הסופי לאחר התכנסות עבור תנאי התחלה מסוים"""
-    times: np.ndarray             # זמנים בחלון [t]
-    states: np.ndarray            # מצבים בחלון [y1, v1, y2, v2]
-    tau: np.ndarray               # זמן איטי: tau = eps * t
-    mu0: np.ndarray               # מעטפת מוד סימטרי: In-Phase
-    mu1: np.ndarray               # מעטפת מוד אנטי-סימטרי: Anti-Phase
-    convergence_time: float       # זמן ההתכנסות (t)
-    is_converged: bool            # האם התכנס
-    slope: float                  # שיפוע המעטפה הסופי
+    """Solution window container representing trajectory and modal dynamics."""
+    times: np.ndarray             # Physical time array [t]
+    states: np.ndarray            # State matrix [y1, v1, y2, v2]
+    tau: np.ndarray               # Slow time array: tau = eps * t
+    mu0: np.ndarray               # Symmetric modal envelope: In-Phase
+    mu1: np.ndarray               # Anti-symmetric modal envelope: Anti-Phase
+    convergence_time: float       # Time at convergence (t)
+    is_converged: bool            # True if convergence criteria met
+    slope: float                  # Final modal envelope linear slope
 
 
 def compute_modal(times: np.ndarray, states: np.ndarray, eps: float):
-    """חישוב מעטפות מודליות איטיות וזמן איטי"""
+    """Computes slow modal envelopes (mu0, mu1) and slow time (tau = eps * t)."""
     y1, v1, y2, v2 = states
     phi1 = (v1 + 1j * y1) * np.exp(-1j * times)
     phi2 = (v2 + 1j * y2) * np.exp(-1j * times)
     mu0 = phi1 + phi2    # In-phase
     mu1 = phi1 - phi2    # Anti-phase
-    tau = eps * times    # tau
+    tau = eps * times    # Slow time tau
     return tau, mu0, mu1
 
 
-# --- מנוע JIT מואץ ב-Numba (מהירות קוד C) ---
+# --- Fast JIT-compiled RK4 Engine (C-speed execution) ---
 @numba.njit(fastmath=True)
 def _rk4_step_jit(state, eps, delta, eta, duffing, model_id, has_coupling, dt):
-    """צעד בודד של RK4 בקוד מכונה"""
+    """Single RK4 integration step in machine code."""
     def eval_rhs(s):
         y1, v1, y2, v2 = s[0], s[1], s[2], s[3]
         if has_coupling:
@@ -83,7 +88,7 @@ def _rk4_step_jit(state, eps, delta, eta, duffing, model_id, has_coupling, dt):
 
 @numba.njit(fastmath=True)
 def _numba_integrate_chunk(state, eps, delta, eta, duffing, model_id, has_coupling, t_start, t_end, dt, n_points):
-    """אינטגרציה של מקטע שלם בלולאת C מהירה"""
+    """Integrates a full time chunk in a tight compiled C loop."""
     total_steps = int(np.ceil((t_end - t_start) / dt))
     actual_dt = (t_end - t_start) / total_steps
     save_interval = max(1, total_steps // (n_points - 1))
@@ -127,7 +132,7 @@ def _solve_single_ic(
     points_per_chunk: int = 1500,
     rk4_dt: float = 0.05,
 ) -> SolutionWindow:
-    """פונקציה פנימית: פותרת תנאי התחלה יחיד"""
+    """Internal solver for a single initial condition."""
     eps = getattr(system_eq, "eps", 0.001)
     rhs_fn = getattr(system_eq, "rhs", system_eq)
     model = getattr(system_eq, "model", "rayleigh")
@@ -203,7 +208,6 @@ def _solve_single_ic(
     return SolutionWindow(last_t, last_y, last_tau, last_mu0, last_mu1, t_curr, (not adaptive or final_slope < slope_tol), final_slope)
 
 
-# פונקציית מעטפת להרצה בתוך ProcessPoolExecutor
 def _worker_wrapper(args):
     system_eq, ic, kwargs = args
     return _solve_single_ic(system_eq, ic, **kwargs)
@@ -212,21 +216,20 @@ def _worker_wrapper(args):
 def solve(
     system_eq: SystemEquation,
     ics: list[list[float]] | list[float] | np.ndarray,
-    method: str = "numba_rk4",     # שיטת הפתרון ("numba_rk4", "dop853", "rk45")
-    workers: int = 8,              # מספר המעבדים שיפעלו במקביל (1 עד 8, 16 וכו')
-    adaptive: bool = True,         # האם להשתמש בעצירה אדפטיבית לפי שיפוע
-    chunk_tau: float = 3.0,        # גודל מקטע בזמן איטי
-    max_tau: float = 30.0,         # זמן ריצה מקסימלי בזמן איטי
-    slope_tol: float = 2e-5,       # סף שיפוע להתכנסות
-    zero_tol: float = 0.05,        # סף דעיכה לאפס
-    consecutive: int = 2,          # מספר חלונות רצופים לאימות יציבות
-    points_per_chunk: int = 1500,  # נקודות דיגום לכל חלון
-    rk4_dt: float = 0.05,          # גודל צעד זמן עבור numba_rk4
+    method: str = "numba_rk4",
+    workers: int = 8,
+    adaptive: bool = True,
+    chunk_tau: float = 3.0,
+    max_tau: float = 30.0,
+    slope_tol: float = 2e-5,
+    zero_tol: float = 0.05,
+    consecutive: int = 2,
+    points_per_chunk: int = 1500,
+    rk4_dt: float = 0.05,
 ) -> list[SolutionWindow]:
     """
-    פונקציית הפותרן הראשית והמאוחדת:
-    מקבלת תמיד רשימת תנאי התחלה (נקודה אחת או רשימה של עשרות נקודות),
-    פותרת אותן במקביל לפי מספר המעבדים שנבחר (workers), ומחזירה רשימת תוצאות.
+    Unified entry point to solve a batch of initial conditions in parallel across CPU workers.
+    Always accepts a list of initial conditions and returns a list of SolutionWindow instances.
     """
     raw_ics = np.asarray(ics, dtype=float)
     if raw_ics.ndim == 1:
@@ -259,6 +262,6 @@ def solve(
 
 if __name__ == "__main__":
     from equations import get_equations
-    eq_un = get_equations("rayleigh", coupling="none")
-    res_un = solve(eq_un, [[2.0, 0.0, 0.0, 0.0]])
-    print(f"ללא צימוד: התכנס ב-t={res_un[0].convergence_time:.1f}")
+    eq_test = get_equations("rayleigh", coupling="linear")
+    res = solve(eq_test, [[2.0, 0.0, 0.0, 0.0]], method="numba_rk4")
+    print(f"Solved 1 IC: converged at t={res[0].convergence_time:.1f}, slope={res[0].slope:.2e}")
