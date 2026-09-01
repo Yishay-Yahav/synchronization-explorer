@@ -1,30 +1,26 @@
 """
 Coupled Oscillators Synchronization Explorer: Automated 8-Experiment Suite (main.py).
 
-Experiment Suite:
-1. Linear Uncoupled Oscillators
-2. Linear Coupled Oscillators
-3. Coupled Van der Pol (Fig. 2)
-4. Coupled Rayleigh Oscillators
-5. Coupled Linear with Duffing
-6. Uncoupled Duffing Only
-7. Coupled Van der Pol with Duffing
-8. Coupled Rayleigh with Duffing
+Pre-Configured Execution Profiles:
+- Profile 0 (Quick Validation): Resolution 11x11, max_tau = 100.0 (~15 minutes)
+- Profile 1 (1-Hour Run):       Resolution 21x21, max_tau = 100.0 (~58 minutes)
+- Profile 2 (3-Hour Run):       Resolution 37x37, max_tau = 100.0 (~2.9 hours)
+- Profile 8h (Overnight 8-Hour): Resolution 60x60, max_tau = 100.0 (~7.7 hours)
 
-Directory & File Naming Architecture:
-- Root Run Directory: experiments_res{res}x{res}_tau{max_tau}/
-- Subdirectory: exp{id}_{model}_{coupling}_eps{eps}_delta{delta}_eta{eta}_duff{duffing}/
-- Output Figures (5 per experiment):
-  1. ..._1_attractors.png
-  2. ..._2_sync_index.png
-  3. ..._3_localization.png
-  4. ..._4_final_physical_coords.png
-  5. ..._5_final_modal_envelopes.png
+Usage:
+  python main.py                     (interactive menu)
+  python main.py --profile 0         (run 11x11 max_tau=100)
+  python main.py --profile 1         (run 1-hour profile)
+  python main.py --profile 2         (run 3-hour profile)
+  python main.py --profile 8h        (run 8-hour overnight suite)
+  python main.py --res 25 --tau 80   (custom parameters)
 """
 
 from __future__ import annotations
 import os
+import sys
 import time
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -140,6 +136,34 @@ EXPERIMENTS = [
 ]
 
 
+PROFILES = {
+    "0": {
+        "name": "Quick Validation (11x11, max_tau=100)",
+        "resolution": 11,
+        "max_tau": 100.0,
+        "est_time": "~15 minutes",
+    },
+    "1": {
+        "name": "1-Hour Run (21x21, max_tau=100)",
+        "resolution": 21,
+        "max_tau": 100.0,
+        "est_time": "~58 minutes",
+    },
+    "2": {
+        "name": "3-Hour Run (37x37, max_tau=100)",
+        "resolution": 37,
+        "max_tau": 100.0,
+        "est_time": "~2.9 hours",
+    },
+    "8h": {
+        "name": "Overnight 8-Hour Run (60x60, max_tau=100)",
+        "resolution": 60,
+        "max_tau": 100.0,
+        "est_time": "~7.7 hours",
+    },
+}
+
+
 def format_param_tag(exp_id: int, name: str, params: dict) -> str:
     """Generates a clean, unambiguous identifier string containing all key parameters."""
     return (
@@ -242,8 +266,8 @@ def plot_final_modal_envelopes(basin_data: BasinData, save_path: str, title: str
 def run_single_experiment(
     exp_config: dict,
     base_run_dir: str,
-    resolution: int = 10,
-    max_tau: float = 60.0,
+    resolution: int = 11,
+    max_tau: float = 100.0,
     chunk_tau: float = 3.0,
     y_range: tuple[float, float] = (-20.0, 20.0),
     workers: int = 8,
@@ -310,8 +334,8 @@ def run_single_experiment(
 
 
 def run_all_experiments(
-    resolution: int = 10,
-    max_tau: float = 60.0,
+    resolution: int = 11,
+    max_tau: float = 100.0,
     chunk_tau: float = 3.0,
     workers: int = 8,
 ):
@@ -342,10 +366,48 @@ def run_all_experiments(
 
     t_total = time.perf_counter() - t_start
     print("\n" + "=" * 60)
-    print(f"[ALL COMPLETE] All 8 experiments finished in {t_total:.2f}s!")
+    print(f"[ALL COMPLETE] All 8 experiments finished in {t_total:.2f}s ({t_total/60:.1f} mins)!")
     print(f"[SUMMARY] Total 40 figures saved across 8 subdirectories in '{base_run_dir}/'.")
     print("=" * 60)
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Coupled Oscillators 8-Experiment Batch Runner")
+    parser.add_argument("--profile", type=str, choices=["0", "1", "2", "8h"], default=None,
+                        help="Execution Profile: '0' (11x11, 15m), '1' (21x21, 1h), '2' (37x37, 3h), '8h' (60x60, 8h)")
+    parser.add_argument("--res", type=int, default=None, help="Custom grid resolution (e.g. 25)")
+    parser.add_argument("--tau", type=float, default=None, help="Custom max_tau (e.g. 100.0)")
+    parser.add_argument("--workers", type=int, default=8, help="Number of parallel CPU workers (default: 8)")
+    args = parser.parse_args()
+
+    if args.profile is not None:
+        prof = PROFILES[args.profile]
+        resolution = prof["resolution"]
+        max_tau = prof["max_tau"]
+    elif args.res is not None:
+        resolution = args.res
+        max_tau = args.tau if args.tau is not None else 100.0
+    else:
+        # Interactive selection menu if run with plain `python main.py`
+        print("\n" + "=" * 60)
+        print("COUPLED OSCILLATORS: 8-EXPERIMENT SUITE RUNNER")
+        print("=" * 60)
+        print("Select Execution Profile:")
+        print(" [0] Profile 0: Quick Validation (11x11, max_tau=100.0) -> ~15 mins")
+        print(" [1] Profile 1: 1-Hour Schedule  (21x21, max_tau=100.0) -> ~58 mins")
+        print(" [2] Profile 2: 3-Hour Schedule  (37x37, max_tau=100.0) -> ~2.9 hours")
+        print(" [3] Profile 8h: Overnight 8-Hour (60x60, max_tau=100.0) -> ~7.7 hours")
+        print("=" * 60)
+
+        choice = input("Enter choice [0/1/2/3] (default: 0): ").strip()
+        choice_map = {"0": "0", "1": "1", "2": "2", "3": "8h", "8h": "8h", "": "0"}
+        selected_prof = choice_map.get(choice, "0")
+        prof = PROFILES[selected_prof]
+        resolution = prof["resolution"]
+        max_tau = prof["max_tau"]
+
+    run_all_experiments(resolution=resolution, max_tau=max_tau, workers=args.workers)
+
+
 if __name__ == "__main__":
-    run_all_experiments(resolution=10, max_tau=60.0, workers=8)
+    main()
