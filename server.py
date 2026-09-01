@@ -13,7 +13,7 @@ import numpy as np
 
 from equations import get_equations
 from solvers import solve, compute_modal
-from classifier import classify, _classify_single, SolutionWindow
+from classifier import classify
 
 
 PORT = 8000
@@ -22,8 +22,8 @@ DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 def run_full_timeseries_analysis(params: dict) -> dict:
     """
-    Runs simulation for given parameters and returns full timeseries + step-by-step
-    classification snapshots for time slider scrub.
+    Runs simulation for given parameters and returns full timeseries + fine-grained
+    data so the client can scrub and compute live metrics at any point in time.
     """
     model = params.get("model", "rayleigh")
     eps = float(params.get("eps", 0.001))
@@ -57,57 +57,23 @@ def run_full_timeseries_analysis(params: dict) -> dict:
         slope_tol=slope_tol,
         zero_tol=zero_tol,
         rk4_dt=rk4_dt,
-        points_per_chunk=1000,
+        points_per_chunk=1500,
     )
     final_win = windows[0]
     final_class = classify([final_win])[0]
 
-    # 2. הרצת סנאפשוטים לאורך ציר הזמן (כדי שהסליידר יוכל לעבור על כל שלב)
-    chunk_time = chunk_tau / eps
-    total_time = float(final_win.times[-1])
-    n_chunks = max(1, int(np.round(total_time / chunk_time)))
-
-    snapshots = []
-    # נדגום בכל נקודת מקטע זמן את המצב והסיווג
-    for step in range(1, n_chunks + 1):
-        t_step_end = min(step * chunk_time, total_time)
-        tau_step = eps * t_step_end
-
-        # חילוץ תת-חלון של המקטע הנוכחי
-        sub_win_results = solve(
-            eq,
-            [ic],
-            method=method,
-            adaptive=False,
-            max_tau=tau_step,
-            chunk_tau=chunk_tau,
-            rk4_dt=rk4_dt,
-            points_per_chunk=600,
-        )
-        sub_win = sub_win_results[0]
-        sub_class = _classify_single(sub_win, zero_tol=zero_tol)
-
-        snapshots.append({
-            "step": step,
-            "time": float(t_step_end),
-            "tau": float(tau_step),
-            "label": sub_class.label,
-            "sync_index": round(sub_class.sync_index, 4),
-            "beating_purity": round(sub_class.beating_purity, 4),
-            "localization": round(sub_class.localization, 4),
-            "rms": round(sub_class.rms_amplitude, 4),
-            "is_stable": bool(sub_class.is_stable),
-            "slope": float(f"{sub_win.slope:.2e}"),
-        })
-
-    # 3. דגימת נתוני מסלול מלאים עבור הגרפים (דגימה חסכונית ומהירה ל-JSON)
-    # נדגום עד 1,200 נקודות לגרף חלק וסופר מהיר
+    # 2. דגימה רציפה של כל המסלול לגרף ולסליידר (עד 1,500 נקודות)
     total_points = len(final_win.times)
-    stride = max(1, total_points // 1200)
+    stride = max(1, total_points // 1500)
     idx = np.arange(0, total_points, stride)
 
     return {
         "success": True,
+        "eps": eps,
+        "zero_tol": zero_tol,
+        "slope_tol": slope_tol,
+        "convergence_time": float(final_win.convergence_time),
+        "is_converged": bool(final_win.is_converged),
         "times": final_win.times[idx].tolist(),
         "tau": final_win.tau[idx].tolist(),
         "y1": final_win.states[0, idx].tolist(),
@@ -116,7 +82,6 @@ def run_full_timeseries_analysis(params: dict) -> dict:
         "v2": final_win.states[3, idx].tolist(),
         "mu0_abs": np.abs(final_win.mu0[idx]).tolist(),
         "mu1_abs": np.abs(final_win.mu1[idx]).tolist(),
-        "snapshots": snapshots,
         "final_classification": {
             "label": final_class.label,
             "sync_index": round(final_class.sync_index, 4),
@@ -154,7 +119,6 @@ class ExplorerHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, "Endpoint not found")
 
     def end_headers(self):
-        # מניעת Caching כדי ששינויים בדפדפן ייטענו מיד
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")

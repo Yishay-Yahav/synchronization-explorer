@@ -1,6 +1,7 @@
 /**
  * Coupled Oscillators Interactive Web Explorer Engine.
- * Manages simulation API calls, real-time Chart.js updates, and time-slider scrubbing.
+ * Only calculates on explicit "Run" button click.
+ * Features 60fps real-time dynamic window metric computation while dragging the time slider.
  */
 
 // Global State
@@ -8,7 +9,6 @@ let currentSimulationData = null;
 let chartTrajectory = null;
 let chartEnvelopes = null;
 let chartPhase = null;
-let debounceTimer = null;
 
 // DOM Elements
 const timeSlider = document.getElementById("time-slider");
@@ -31,7 +31,7 @@ const serverStatusText = document.getElementById("server-status-text");
 document.addEventListener("DOMContentLoaded", () => {
   initCharts();
   bindEvents();
-  runSimulation(); // Initial automatic run
+  runSimulation(); // Initial run on page load
 });
 
 function initCharts() {
@@ -167,40 +167,16 @@ function initCharts() {
 }
 
 function bindEvents() {
-  // Time Slider Scrubbing Event
+  // Time Slider Scrubbing Event (Real-time dynamic updates)
   timeSlider.addEventListener("input", (e) => {
-    const stepIdx = parseInt(e.target.value, 10);
-    renderTimeSnapshot(stepIdx);
+    const pointIdx = parseInt(e.target.value, 10);
+    renderTimeSnapshot(pointIdx);
   });
 
-  // Manual Run Button
+  // Manual Run Button ONLY (No automatic calculation on input change)
   btnRun.addEventListener("click", () => {
     runSimulation();
   });
-
-  // Parameter Change Listeners (Auto-run with debounce)
-  const inputIds = [
-    "param-model", "param-eps", "param-delta", "param-eta", "param-duffing",
-    "param-y1", "param-v1", "param-y2", "param-v2",
-    "param-method", "param-adaptive", "param-max-tau", "param-chunk-tau", "param-slope-tol", "param-rk4-dt"
-  ];
-
-  inputIds.forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener("change", () => scheduleSimulation());
-      if (el.tagName === "INPUT" && el.type === "number") {
-        el.addEventListener("input", () => scheduleSimulation());
-      }
-    }
-  });
-}
-
-function scheduleSimulation() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    runSimulation();
-  }, 400); // 400ms debounce
 }
 
 function gatherParams() {
@@ -227,8 +203,10 @@ function gatherParams() {
 
 async function runSimulation() {
   const params = gatherParams();
-  serverStatusText.textContent = "מחשב סימולציה ב-Numba JIT...";
+  serverStatusText.textContent = "מחשב סימולציה...";
   serverStatusText.style.color = "#00e5ff";
+  btnRun.disabled = true;
+  btnRun.textContent = "⏳ מחשב...";
 
   try {
     const response = await fetch("/api/simulate", {
@@ -243,73 +221,173 @@ async function runSimulation() {
     }
 
     currentSimulationData = data;
-    serverStatusText.textContent = `חישוב הושלם בהצלחה (t = ${data.final_classification.convergence_time})`;
+    const nPoints = data.times.length;
+    serverStatusText.textContent = `חישוב הושלם (התכנס ב-t = ${data.convergence_time.toFixed(1)})`;
     serverStatusText.style.color = "#10b981";
 
     // Setup Time Slider
-    const snapshots = data.snapshots;
     timeSlider.min = "0";
-    timeSlider.max = (snapshots.length - 1).toString();
-    timeSlider.value = (snapshots.length - 1).toString();
+    timeSlider.max = (nPoints - 1).toString();
+    timeSlider.value = (nPoints - 1).toString();
 
-    // Render Final Step by Default
-    renderTimeSnapshot(snapshots.length - 1);
+    // Render Final Point by Default
+    renderTimeSnapshot(nPoints - 1);
 
   } catch (err) {
     console.error("Simulation Error:", err);
     serverStatusText.textContent = "שגיאה בחישוב: " + err.message;
     serverStatusText.style.color = "#ef4444";
+  } finally {
+    btnRun.disabled = false;
+    btnRun.textContent = "▶ הרץ חישוב";
   }
 }
 
-function renderTimeSnapshot(stepIdx) {
-  if (!currentSimulationData || !currentSimulationData.snapshots.length) return;
+/**
+ * Computes dynamic metrics on the local sliding window around point index `pointIdx`
+ */
+function computeDynamicMetrics(pointIdx) {
+  const data = currentSimulationData;
+  const n = pointIdx + 1;
 
-  const snapshots = currentSimulationData.snapshots;
-  const currSnap = snapshots[Math.min(stepIdx, snapshots.length - 1)];
+  // Window size: last 150 points or full history if early
+  const winSize = Math.min(n, 150);
+  const startIdx = Math.max(0, n - winSize);
+
+  const subTimes = data.times.slice(startIdx, n);
+  const subY1 = data.y1.slice(startIdx, n);
+  const subV1 = data.v1.slice(startIdx, n);
+  const subY2 = data.y2.slice(startIdx, n);
+  const subV2 = data.v2.slice(startIdx, n);
+  const subMu0 = data.mu0_abs.slice(startIdx, n);
+  const subMu1 = data.mu1_abs.slice(startIdx, n);
+
+  // 1. RMS Amplitude
+  let sumEnergy = 0;
+  let sumE1 = 0;
+  let sumE2 = 0;
+  for (let i = 0; i < winSize; i++) {
+    const e1 = subY1[i] ** 2 + subV1[i] ** 2;
+    const e2 = subY2[i] ** 2 + subV2[i] ** 2;
+    sumE1 += e1;
+    sumE2 += e2;
+    sumEnergy += 0.5 * (e1 + e2);
+  }
+  const rms = Math.sqrt(sumEnergy / winSize);
+  const localization = sumE1 / Math.max(sumE1 + sumE2, 1e-12);
+
+  // 2. Mean Modal Envelopes and CV
+  let meanMu0 = 0, meanMu1 = 0;
+  for (let i = 0; i < winSize; i++) {
+    meanMu0 += subMu0[i];
+    meanMu1 += subMu1[i];
+  }
+  meanMu0 /= winSize;
+  meanMu1 /= winSize;
+
+  let varMu0 = 0, varMu1 = 0;
+  for (let i = 0; i < winSize; i++) {
+    varMu0 += (subMu0[i] - meanMu0) ** 2;
+    varMu1 += (subMu1[i] - meanMu1) ** 2;
+  }
+  const cvMu0 = Math.sqrt(varMu0 / winSize) / Math.max(meanMu0, 1e-12);
+  const cvMu1 = Math.sqrt(varMu1 / winSize) / Math.max(meanMu1, 1e-12);
+
+  // 3. Sync Index & Beating Purity
+  const totalModal = Math.max(meanMu0 + meanMu1, 1e-12);
+  const syncIndex = meanMu0 / totalModal;
+  const beatingPurity = Math.max(0.0, 1.0 - Math.abs(2.0 * syncIndex - 1.0));
+
+  // 4. Slope over window
+  const dt = subTimes[subTimes.length - 1] - subTimes[0];
+  let slope = 1.0;
+  if (dt > 1e-3) {
+    const slope0 = Math.abs(subMu0[subMu0.length - 1] - subMu0[0]) / dt;
+    const slope1 = Math.abs(subMu1[subMu1.length - 1] - subMu1[0]) / dt;
+    slope = Math.max(slope0, slope1);
+  }
+
+  // 5. Dynamic Stability & Attractor Label
+  const isEnd = (pointIdx === data.times.length - 1);
+  const isStable = (slope < data.slope_tol && cvMu0 < 0.15 && cvMu1 < 0.15) || (rms < data.zero_tol);
+
+  let label = "other";
+  if (rms < data.zero_tol) {
+    label = "zero";
+  } else if (!isStable && !isEnd) {
+    label = "other"; // In transient transition
+  } else if (syncIndex > 0.92) {
+    label = "in-phase";
+  } else if (syncIndex < 0.08) {
+    label = "anti-phase";
+  } else if (beatingPurity > 0.75) {
+    label = "stationary beating";
+  } else {
+    label = "other";
+  }
+
+  return {
+    time: data.times[pointIdx],
+    tau: data.tau[pointIdx],
+    rms,
+    localization,
+    syncIndex,
+    beatingPurity,
+    slope,
+    isStable,
+    label,
+  };
+}
+
+function renderTimeSnapshot(pointIdx) {
+  if (!currentSimulationData || !currentSimulationData.times.length) return;
+
+  const data = currentSimulationData;
+  const totalPoints = data.times.length;
+  const safeIdx = Math.min(Math.max(pointIdx, 0), totalPoints - 1);
+
+  // Compute live dynamic window metrics at this exact time
+  const metrics = computeDynamicMetrics(safeIdx);
 
   // 1. Update Time Readout
-  valCurrTime.textContent = `t = ${currSnap.time.toFixed(1)}`;
-  valCurrTau.textContent = `τ = ${currSnap.tau.toFixed(2)}`;
-  valCurrStep.textContent = `${stepIdx + 1} / ${snapshots.length}`;
+  valCurrTime.textContent = `t = ${metrics.time.toFixed(1)}`;
+  valCurrTau.textContent = `τ = ${metrics.tau.toFixed(2)}`;
+  valCurrStep.textContent = `${safeIdx + 1} / ${totalPoints}`;
 
   // 2. Update Live Classification Badge & KPIs
-  updateClassificationBadge(currSnap);
+  updateClassificationBadge(metrics.label);
 
-  kpiSyncIndex.textContent = currSnap.sync_index.toFixed(3);
-  kpiBeatingPurity.textContent = currSnap.beating_purity.toFixed(3);
-  kpiLocalization.textContent = currSnap.localization.toFixed(3);
-  kpiRms.textContent = currSnap.rms.toFixed(3);
+  kpiSyncIndex.textContent = metrics.syncIndex.toFixed(3);
+  kpiBeatingPurity.textContent = metrics.beatingPurity.toFixed(3);
+  kpiLocalization.textContent = metrics.localization.toFixed(3);
+  kpiRms.textContent = metrics.rms.toFixed(3);
 
-  if (currSnap.is_stable) {
+  if (metrics.isStable) {
     kpiStability.textContent = "סטציונרי ויציב ✅";
     kpiStability.className = "kpi-value text-success";
   } else {
     kpiStability.textContent = "בתהליך התכנסות ⏳";
-    kpiStability.className = "kpi-value text-warning";
+    kpiStability.className = "kpi-value";
+    kpiStability.style.color = "#f59e0b";
   }
-  kpiSlope.textContent = `שיפוע: ${currSnap.slope}`;
+  kpiSlope.textContent = `שיפוע: ${metrics.slope.toExponential(2)}`;
 
-  // 3. Slice Timeseries Data up to selected time t
-  const times = currentSimulationData.times;
-  let sliceEnd = times.findIndex((t) => t >= currSnap.time);
-  if (sliceEnd === -1) sliceEnd = times.length;
-  sliceEnd = Math.max(sliceEnd, 10);
-
-  const slicedTimes = times.slice(0, sliceEnd);
-  const slicedTau = currentSimulationData.tau.slice(0, sliceEnd);
-  const slicedY1 = currentSimulationData.y1.slice(0, sliceEnd);
-  const slicedV1 = currentSimulationData.v1.slice(0, sliceEnd);
-  const slicedY2 = currentSimulationData.y2.slice(0, sliceEnd);
-  const slicedV2 = currentSimulationData.v2.slice(0, sliceEnd);
-  const slicedMu0 = currentSimulationData.mu0_abs.slice(0, sliceEnd);
-  const slicedMu1 = currentSimulationData.mu1_abs.slice(0, sliceEnd);
+  // 3. Slice Timeseries Data up to selected time index
+  const sliceEnd = Math.max(safeIdx + 1, 5);
+  const slicedTimes = data.times.slice(0, sliceEnd);
+  const slicedTau = data.tau.slice(0, sliceEnd);
+  const slicedY1 = data.y1.slice(0, sliceEnd);
+  const slicedV1 = data.v1.slice(0, sliceEnd);
+  const slicedY2 = data.y2.slice(0, sliceEnd);
+  const slicedV2 = data.v2.slice(0, sliceEnd);
+  const slicedMu0 = data.mu0_abs.slice(0, sliceEnd);
+  const slicedMu1 = data.mu1_abs.slice(0, sliceEnd);
 
   // 4. Update Chart 1: Trajectory
   chartTrajectory.data.labels = slicedTimes.map((t) => t.toFixed(0));
   chartTrajectory.data.datasets[0].data = slicedY1;
   chartTrajectory.data.datasets[1].data = slicedY2;
-  chartTrajectory.update("none"); // 60fps instant update
+  chartTrajectory.update("none");
 
   // 5. Update Chart 2: Envelopes
   chartEnvelopes.data.labels = slicedTau.map((tau) => tau.toFixed(2));
@@ -323,24 +401,24 @@ function renderTimeSnapshot(stepIdx) {
   chartPhase.update("none");
 }
 
-function updateClassificationBadge(snap) {
+function updateClassificationBadge(label) {
   liveLabelBadge.className = "badge-attractor";
-  const label = snap.label.toLowerCase();
+  const l = (label || "").toLowerCase();
 
-  if (label.includes("beating")) {
+  if (l.includes("beating")) {
     liveLabelBadge.textContent = "Stationary Beating (פעימה עומדת)";
     liveLabelBadge.classList.add("badge-beating");
-  } else if (label.includes("in-phase")) {
+  } else if (l.includes("in-phase")) {
     liveLabelBadge.textContent = "In-Phase (סנכרון באותו מופע)";
     liveLabelBadge.classList.add("badge-inphase");
-  } else if (label.includes("anti-phase")) {
+  } else if (l.includes("anti-phase")) {
     liveLabelBadge.textContent = "Anti-Phase (סנכרון בהיפוך מופע)";
     liveLabelBadge.classList.add("badge-antiphase");
-  } else if (label.includes("zero")) {
+  } else if (l.includes("zero")) {
     liveLabelBadge.textContent = "Zero (דעיכה לאפס)";
     liveLabelBadge.classList.add("badge-zero");
   } else {
-    liveLabelBadge.textContent = "Other / Unsettled (טרם התכנס)";
+    liveLabelBadge.textContent = "Other / Unsettled (בתהליך התכנסות)";
     liveLabelBadge.classList.add("badge-other");
   }
 }
