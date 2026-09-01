@@ -1,7 +1,10 @@
 /**
  * Coupled Oscillators Interactive Web Explorer Engine.
- * Only calculates on explicit "Run" button click.
- * Features 60fps real-time dynamic window metric computation while dragging the time slider.
+ * Features:
+ * - Interactive Mathematical Formula Board with inline inputs and term toggles
+ * - Quick presets (Rayleigh, VdP, Uncoupled, Duffing)
+ * - Calculation ONLY on explicit "Run" button click
+ * - 60fps real-time dynamic metric computation during time scrubbing
  */
 
 // Global State
@@ -10,7 +13,33 @@ let chartTrajectory = null;
 let chartEnvelopes = null;
 let chartPhase = null;
 
-// DOM Elements
+// DOM Elements: Equation Toggles & Terms
+const toggleCoupling = document.getElementById("toggle-coupling");
+const termCoupling = document.getElementById("term-coupling");
+const eqEpsCoupling = document.getElementById("eq-eps-coupling");
+
+const toggleDuffing = document.getElementById("toggle-duffing");
+const termDuffing = document.getElementById("term-duffing");
+const eqDuffing = document.getElementById("eq-duffing");
+
+const toggleVdp = document.getElementById("toggle-vdp");
+const termVdp = document.getElementById("term-vdp");
+const eqDeltaVdp = document.getElementById("eq-delta-vdp");
+const eqEtaVdp = document.getElementById("eq-eta-vdp");
+
+const toggleRayleigh = document.getElementById("toggle-rayleigh");
+const termRayleigh = document.getElementById("term-rayleigh");
+const eqDeltaRayleigh = document.getElementById("eq-delta-rayleigh");
+const eqEtaRayleigh = document.getElementById("eq-eta-rayleigh");
+
+const toggleGamma = document.getElementById("toggle-gamma");
+const termGamma = document.getElementById("term-gamma");
+const eqGamma = document.getElementById("eq-gamma");
+
+const eqEpsScale = document.getElementById("eq-eps-scale");
+const presetButtons = document.querySelectorAll(".btn-preset");
+
+// DOM Elements: Time Slider & KPIs
 const timeSlider = document.getElementById("time-slider");
 const valCurrTime = document.getElementById("val-curr-time");
 const valCurrTau = document.getElementById("val-curr-tau");
@@ -27,12 +56,108 @@ const kpiSlope = document.getElementById("kpi-slope");
 const btnRun = document.getElementById("btn-run");
 const serverStatusText = document.getElementById("server-status-text");
 
-// Initialize Charts on Page Load
+// Initialize on Page Load
 document.addEventListener("DOMContentLoaded", () => {
   initCharts();
+  bindEquationControls();
   bindEvents();
   runSimulation(); // Initial run on page load
 });
+
+function bindEquationControls() {
+  // Toggle visual states
+  const setupToggle = (toggleEl, blockEl) => {
+    toggleEl.addEventListener("change", () => {
+      if (toggleEl.checked) {
+        blockEl.classList.add("term-active");
+        blockEl.classList.remove("term-inactive");
+      } else {
+        blockEl.classList.remove("term-active");
+        blockEl.classList.add("term-inactive");
+      }
+    });
+  };
+
+  setupToggle(toggleCoupling, termCoupling);
+  setupToggle(toggleDuffing, termDuffing);
+  setupToggle(toggleVdp, termVdp);
+  setupToggle(toggleRayleigh, termRayleigh);
+  setupToggle(toggleGamma, termGamma);
+
+  // Preset Buttons
+  presetButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      presetButtons.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      applyPreset(btn.dataset.preset);
+    });
+  });
+}
+
+function applyPreset(presetName) {
+  if (presetName === "rayleigh") {
+    // Coupled Rayleigh
+    toggleCoupling.checked = true;
+    toggleDuffing.checked = false;
+    toggleVdp.checked = false;
+    toggleRayleigh.checked = true;
+    toggleGamma.checked = false;
+
+    eqEpsCoupling.value = "0.001";
+    eqDeltaRayleigh.value = "0.1";
+    eqEtaRayleigh.value = "0.15";
+    eqDuffing.value = "0.0";
+  } else if (presetName === "vdp") {
+    // Coupled Van der Pol
+    toggleCoupling.checked = true;
+    toggleDuffing.checked = false;
+    toggleVdp.checked = true;
+    toggleRayleigh.checked = false;
+    toggleGamma.checked = false;
+
+    eqEpsCoupling.value = "0.001";
+    eqDeltaVdp.value = "0.1";
+    eqEtaVdp.value = "0.15";
+  } else if (presetName === "uncoupled") {
+    // 2 Uncoupled Simple Oscillators (eps_c = 0)
+    toggleCoupling.checked = false;
+    toggleDuffing.checked = false;
+    toggleVdp.checked = false;
+    toggleRayleigh.checked = true;
+    toggleGamma.checked = false;
+
+    eqEpsCoupling.value = "0.0";
+    eqDeltaRayleigh.value = "0.1";
+  } else if (presetName === "duffing") {
+    // Coupled Duffing Localization
+    toggleCoupling.checked = true;
+    toggleDuffing.checked = true;
+    toggleVdp.checked = false;
+    toggleRayleigh.checked = true;
+    toggleGamma.checked = false;
+
+    eqEpsCoupling.value = "0.001";
+    eqDuffing.value = "3.0";
+    eqDeltaRayleigh.value = "0.1";
+  }
+
+  // Update visual styles
+  [
+    [toggleCoupling, termCoupling],
+    [toggleDuffing, termDuffing],
+    [toggleVdp, termVdp],
+    [toggleRayleigh, termRayleigh],
+    [toggleGamma, termGamma],
+  ].forEach(([tog, blk]) => {
+    if (tog.checked) {
+      blk.classList.add("term-active");
+      blk.classList.remove("term-inactive");
+    } else {
+      blk.classList.remove("term-active");
+      blk.classList.add("term-inactive");
+    }
+  });
+}
 
 function initCharts() {
   const commonOptions = {
@@ -173,7 +298,7 @@ function bindEvents() {
     renderTimeSnapshot(pointIdx);
   });
 
-  // Manual Run Button ONLY (No automatic calculation on input change)
+  // Manual Run Button ONLY
   btnRun.addEventListener("click", () => {
     runSimulation();
   });
@@ -181,17 +306,23 @@ function bindEvents() {
 
 function gatherParams() {
   return {
-    model: document.getElementById("param-model").value,
-    eps: parseFloat(document.getElementById("param-eps").value),
-    delta: parseFloat(document.getElementById("param-delta").value),
-    eta: parseFloat(document.getElementById("param-eta").value),
-    duffing: parseFloat(document.getElementById("param-duffing").value),
+    // Physical Equation Parameters from Interactive Formula
+    eps_coupling: toggleCoupling.checked ? parseFloat(eqEpsCoupling.value) : 0.0,
+    duffing: toggleDuffing.checked ? parseFloat(eqDuffing.value) : 0.0,
+    delta_vdp: toggleVdp.checked ? parseFloat(eqDeltaVdp.value) : 0.0,
+    eta_vdp: parseFloat(eqEtaVdp.value),
+    delta_rayleigh: toggleRayleigh.checked ? parseFloat(eqDeltaRayleigh.value) : 0.0,
+    eta_rayleigh: parseFloat(eqEtaRayleigh.value),
+    gamma: toggleGamma.checked ? parseFloat(eqGamma.value) : 0.0,
+    eps_scale: parseFloat(eqEpsScale.value),
 
+    // Initial Conditions
     y1: parseFloat(document.getElementById("param-y1").value),
     v1: parseFloat(document.getElementById("param-v1").value),
     y2: parseFloat(document.getElementById("param-y2").value),
     v2: parseFloat(document.getElementById("param-v2").value),
 
+    // Solver Settings
     method: document.getElementById("param-method").value,
     adaptive: document.getElementById("param-adaptive").checked,
     max_tau: parseFloat(document.getElementById("param-max-tau").value),
@@ -250,7 +381,6 @@ function computeDynamicMetrics(pointIdx) {
   const data = currentSimulationData;
   const n = pointIdx + 1;
 
-  // Window size: last 150 points or full history if early
   const winSize = Math.min(n, 150);
   const startIdx = Math.max(0, n - winSize);
 
@@ -262,7 +392,7 @@ function computeDynamicMetrics(pointIdx) {
   const subMu0 = data.mu0_abs.slice(startIdx, n);
   const subMu1 = data.mu1_abs.slice(startIdx, n);
 
-  // 1. RMS Amplitude
+  // 1. RMS Amplitude & Localization
   let sumEnergy = 0;
   let sumE1 = 0;
   let sumE2 = 0;
@@ -315,7 +445,7 @@ function computeDynamicMetrics(pointIdx) {
   if (rms < data.zero_tol) {
     label = "zero";
   } else if (!isStable && !isEnd) {
-    label = "other"; // In transient transition
+    label = "other";
   } else if (syncIndex > 0.92) {
     label = "in-phase";
   } else if (syncIndex < 0.08) {
@@ -346,7 +476,6 @@ function renderTimeSnapshot(pointIdx) {
   const totalPoints = data.times.length;
   const safeIdx = Math.min(Math.max(pointIdx, 0), totalPoints - 1);
 
-  // Compute live dynamic window metrics at this exact time
   const metrics = computeDynamicMetrics(safeIdx);
 
   // 1. Update Time Readout
