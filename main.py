@@ -11,20 +11,26 @@ Runs 6 distinct oscillator setups:
 
 For each setup:
 - Computes a 10x10 initial condition basin up to max_tau = 60.0 on 8 CPU workers.
-- Generates 3 plot maps: Attractors (discrete), Sync Index (continuous), Localization (continuous).
-- Saves all outputs organized into 6 dedicated subdirectories inside 'experiments/'.
+- Generates 5 output plots saved in dedicated subdirectories:
+  1. 2D Attractors Map (מפת אטרקטורים דיסקרטית)
+  2. 2D Sync Index Map (מפת אינדקס סנכרון רציפה)
+  3. 2D Localization Map (מפת לוקליזציה רציפה)
+  4. Final Physical Coordinates (קואורדינטות פיזיקליות y1, y2 בחלון הזמן הסופי)
+  5. Final Modal Envelopes (מעטפות מודליות |mu0|, |mu1| בחלון הזמן הסופי)
 """
 
 from __future__ import annotations
 import os
 import time
+import numpy as np
+import matplotlib.pyplot as plt
+
 from equations import get_equations, SystemEquation
-from plot_basin import compute_basin, plot_basin
+from plot_basin import compute_basin, plot_basin, BasinData
 
 
 OUTPUT_BASE_DIR = "experiments"
 
-# הגדרת 6 הניסויים הפיזיקליים
 EXPERIMENTS = [
     {
         "id": 1,
@@ -107,6 +113,95 @@ EXPERIMENTS = [
 ]
 
 
+def plot_final_physical_coords(basin_data: BasinData, save_path: str, title: str):
+    """מציירת את הקואורדינטות הפיזיקליות (y1, y2) בחלון הזמן הסופי עבור מדגם מייצג של נקודות"""
+    windows = basin_data.final_windows
+    classes = basin_data.final_classes
+    n_points = len(windows)
+
+    # בחירת עד 4 נקודות מייצגות שונות של אטרקטורים
+    sample_indices = []
+    seen_labels = set()
+    for i, cl in enumerate(classes):
+        if cl.label not in seen_labels:
+            sample_indices.append(i)
+            seen_labels.add(cl.label)
+        if len(sample_indices) >= 4:
+            break
+
+    if not sample_indices:
+        sample_indices = [0]
+
+    n_samples = len(sample_indices)
+    fig, axes = plt.subplots(n_samples, 1, figsize=(10, 2.5 * n_samples), sharex=False)
+    if n_samples == 1:
+        axes = [axes]
+
+    for ax, idx in zip(axes, sample_indices):
+        win = windows[idx]
+        cl = classes[idx]
+        t = win.times
+        y1 = win.states[0]
+        y2 = win.states[2]
+
+        ax.plot(t, y1, label="$y_1(t)$ (מתנד 1)", color="#0077b6", lw=1.2)
+        ax.plot(t, y2, label="$y_2(t)$ (מתנד 2)", color="#e76f51", lw=1.2)
+        ax.set_title(f"אטרקטור: {cl.label.upper()} | תנאי התחלה #{idx+1} | RMS={cl.rms_amplitude:.2f}", fontsize=10, fontweight="bold")
+        ax.set_ylabel("מיקום $y$")
+        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.legend(loc="upper right", fontsize=8)
+
+    axes[-1].set_xlabel("זמן אמיתי $t$ בחלון הסופי")
+    fig.suptitle(f"קואורדינטות פיזיקליות בחלון הסופי • {title}", fontsize=11, fontweight="bold")
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_final_modal_envelopes(basin_data: BasinData, save_path: str, title: str):
+    """מציירת את המעטפות המודליות (|mu0|, |mu1|) בחלון הזמן הסופי עבור מדגם מייצג של נקודות"""
+    windows = basin_data.final_windows
+    classes = basin_data.final_classes
+
+    # בחירת עד 4 נקודות מייצגות שונות
+    sample_indices = []
+    seen_labels = set()
+    for i, cl in enumerate(classes):
+        if cl.label not in seen_labels:
+            sample_indices.append(i)
+            seen_labels.add(cl.label)
+        if len(sample_indices) >= 4:
+            break
+
+    if not sample_indices:
+        sample_indices = [0]
+
+    n_samples = len(sample_indices)
+    fig, axes = plt.subplots(n_samples, 1, figsize=(10, 2.5 * n_samples), sharex=False)
+    if n_samples == 1:
+        axes = [axes]
+
+    for ax, idx in zip(axes, sample_indices):
+        win = windows[idx]
+        cl = classes[idx]
+        tau = win.tau
+        abs_mu0 = np.abs(win.mu0)
+        abs_mu1 = np.abs(win.mu1)
+
+        ax.plot(tau, abs_mu0, label="$|\mu_0(\tau)|$ (In-Phase)", color="#2a9d8f", lw=1.6)
+        ax.plot(tau, abs_mu1, label="$|\mu_1(\tau)|$ (Anti-Phase)", color="#3b82f6", lw=1.6)
+        ax.set_title(f"אטרקטור: {cl.label.upper()} | Sync Index={cl.sync_index:.3f} | טוהר פעימה={cl.beating_purity:.3f}", fontsize=10, fontweight="bold")
+        ax.set_ylabel("משרעת מודלית")
+        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.legend(loc="upper right", fontsize=8)
+
+    axes[-1].set_xlabel("זמן איטי $\\tau = \\epsilon t$ בחלון הסופי")
+    fig.suptitle(f"מעטפות מודליות בחלון הסופי • {title}", fontsize=11, fontweight="bold")
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
 def run_single_experiment(
     exp_config: dict,
     resolution: int = 10,
@@ -115,7 +210,7 @@ def run_single_experiment(
     y_range: tuple[float, float] = (-20.0, 20.0),
     workers: int = 8,
 ):
-    """מריצה ניסוי בודד ומפיקה עבורו 3 סוגי מפות (אטרקטורים, סנכרון ולוקליזציה)"""
+    """מריצה ניסוי בודד ומפיקה 5 סוגי גרפים (3 מפות אגנים + קואורדינטות פיזיקליות + מעטפות מודליות)"""
     folder_name = exp_config["folder"]
     target_dir = os.path.join(OUTPUT_BASE_DIR, folder_name)
     os.makedirs(target_dir, exist_ok=True)
@@ -150,7 +245,7 @@ def run_single_experiment(
         record_evolution=True,
     )
 
-    # 3. הפקת ושמירת 3 סוגי המפות
+    # 3. הפקת ושמירת 5 סוגי הגרפים
     prefix = f"{folder_name}_tau{int(max_tau)}_res{resolution}x{resolution}"
 
     # מפה 1: אטרקטורים (דיסקרטי)
@@ -165,7 +260,15 @@ def run_single_experiment(
     path_loc = os.path.join(target_dir, f"{prefix}_3_localization.png")
     plot_basin(basin_data, mode="localization", show_plot=False, save_path=path_loc)
 
-    print(f"✅ הושלם בהצלחה ניסוי {exp_config['id']}! 3 המפות נשמרו ב-{target_dir}\n")
+    # גרף 4: קואורדינטות פיזיקליות בחלון הסופי
+    path_phys = os.path.join(target_dir, f"{prefix}_4_final_physical_coords.png")
+    plot_final_physical_coords(basin_data, save_path=path_phys, title=exp_config["title"])
+
+    # גרף 5: מעטפות מודליות בחלון הסופי
+    path_modal = os.path.join(target_dir, f"{prefix}_5_final_modal_envelopes.png")
+    plot_final_modal_envelopes(basin_data, save_path=path_modal, title=exp_config["title"])
+
+    print(f"✅ הושלם בהצלחה ניסוי {exp_config['id']}! 5 הגרפים נשמרו ב-{target_dir}\n")
 
 
 def run_all_experiments(
@@ -174,7 +277,7 @@ def run_all_experiments(
     chunk_tau: float = 3.0,
     workers: int = 8,
 ):
-    """מריצה את כל 6 הניסויים ברצף ושומרת אותם ב-6 תיקיות מסודרות"""
+    """מריצה את כל 6 הניסויים ברצף ושומרת 5 גרפים לכל ניסוי (סה"כ 30 גרפים)"""
     print("\n" + "#" * 60)
     print("🚀 מתחיל הרצה מלאה של 6 הניסויים הפיזיקליים (10x10, max_tau=60)")
     print(f"📁 כל התוצאות יישמרו תחת התיקייה: '{OUTPUT_BASE_DIR}/'")
@@ -193,10 +296,9 @@ def run_all_experiments(
     t_total = time.perf_counter() - t_start
     print("\n" + "=" * 60)
     print(f"🎉 כל 6 הניסויים הסתיימו בהצלחה תוך {t_total:.2f} שניות!")
-    print(f"📂 נשמרו בסך הכל 18 מפות ב-6 תיקיות בתוך '{OUTPUT_BASE_DIR}/'.")
+    print(f"📂 נשמרו בסך הכל 30 גרפים (5 לכל ניסוי) בתוך '{OUTPUT_BASE_DIR}/'.")
     print("=" * 60)
 
 
 if __name__ == "__main__":
-    # הרצת כל 6 הניסויים
     run_all_experiments(resolution=10, max_tau=60.0, workers=8)
