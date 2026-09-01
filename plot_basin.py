@@ -2,7 +2,7 @@
 Coupled Oscillators: 2D Basin of Attraction Visualizer & Explorer (Matplotlib).
 Features:
 - Parallel batch solving on multiple CPU workers
-- Discrete Attractor Colormaps & Continuous Metric Maps (Sync Index, Localization, Time)
+- Discrete Attractor Colormaps (matching publication Fig. 2 standard)
 - Interactive Time-Slider (Time Evolution of the Basin)
 - Click-to-Trajectory: Click any coordinate in the basin to open its full trajectory plot
 - High-res PNG export & Animated GIF export
@@ -14,12 +14,11 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
-from matplotlib.widgets import Slider, RadioButtons
-import matplotlib.animation as animation
+from matplotlib.widgets import Slider
 
 from equations import SystemEquation, get_equations
 from solvers import solve, SolutionWindow
-from classifier import classify, Classification, _classify_single
+from classifier import classify, Classification
 from plot_trajectory import plot_trajectory
 
 
@@ -33,22 +32,27 @@ LABEL_TO_ID = {
 
 ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
-# צבעים מובחנים ל-5 האטרקטורים
+# צבעי מפת האגנים התואמים בדיוק למאמר (Fig. 2):
+# 0: other / unsettled -> אפור בהיר
+# 1: in-phase -> כחול (#0072BD)
+# 2: anti-phase -> צהוב/זהב (#E69F00)
+# 3: stationary beating -> אדום/חלודה (#D9531E)
+# 4: zero -> שחור (#000000)
 COLORS = [
-    "#ef4444",  # 0: other / unsettled (אדום)
-    "#10b981",  # 1: in-phase (ירוק/טורקיז)
-    "#3b82f6",  # 2: anti-phase (כחול)
-    "#f97316",  # 3: stationary beating (כתום)
-    "#6b7280",  # 4: zero (אפור)
+    "#b0bec5",  # 0: other / unsettled (אפור בהיר)
+    "#0072bd",  # 1: in-phase (כחול)
+    "#e69f00",  # 2: anti-phase (צהוב/זהב)
+    "#d9531e",  # 3: stationary beating (אדום/חלודה)
+    "#000000",  # 4: zero response (שחור)
 ]
 BASIN_CMAP = ListedColormap(COLORS)
 BASIN_NORM = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5, 4.5], BASIN_CMAP.N)
 
 
 def generate_grid(
-    y1_range: tuple[float, float] = (-4.0, 4.0),
-    y2_range: tuple[float, float] = (-4.0, 4.0),
-    resolution: int = 40,
+    y1_range: tuple[float, float] = (-20.0, 20.0),
+    y2_range: tuple[float, float] = (-20.0, 20.0),
+    resolution: int = 50,
     v1: float = 0.0,
     v2: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, list[list[float]]]:
@@ -104,9 +108,9 @@ class BasinData:
 
 def compute_basin(
     system_eq: SystemEquation,
-    y1_range: tuple[float, float] = (-4.0, 4.0),
-    y2_range: tuple[float, float] = (-4.0, 4.0),
-    resolution: int = 40,
+    y1_range: tuple[float, float] = (-20.0, 20.0),
+    y2_range: tuple[float, float] = (-20.0, 20.0),
+    resolution: int = 50,
     v1: float = 0.0,
     v2: float = 0.0,
     workers: int = 8,
@@ -125,6 +129,7 @@ def compute_basin(
     print(f"\n==================================================")
     print(f"[BASIN] Computing 2D Basin of Attraction ({resolution}x{resolution} = {n_points} points)")
     print(f"[CONFIG] Model: {system_eq.model}, Coupling: {system_eq.coupling}, Workers: {workers}")
+    print(f"[RANGE] y1 in {y1_range}, y2 in {y2_range}")
     print(f"==================================================")
 
     t0 = time.perf_counter()
@@ -146,7 +151,6 @@ def compute_basin(
     snapshot_grids = []
     if record_evolution:
         eps = getattr(system_eq, "eps", 0.001)
-        chunk_time = chunk_tau / eps
         n_steps = max(1, int(np.round(max_tau / chunk_tau)))
         tau_steps = [round((s + 1) * chunk_tau, 2) for s in range(n_steps)]
 
@@ -175,65 +179,65 @@ def plot_basin(
     save_path: str | None = None,
 ) -> plt.Figure:
     """
-    מציגה את מפת האגנים ב-Matplotlib עם:
-    1. מפת צבעים דיסקרטית / רציפה
-    2. סליידר זמן אינטראקטיבי
-    3. לחיצה על נקודה במפה לפתיחת גרף מסלול מלא
+    מציגה את מפת האגנים ב-Matplotlib עם התאמה מלאה ל-Fig. 2:
+    - כחול = In-Phase
+    - צהוב = Anti-Phase
+    - אדום = Stationary Beating
+    - שחור = Zero
     """
-    fig = plt.figure(figsize=(11, 9))
-    fig.canvas.manager.set_window_title(f"מפת אגני משיכה 2D - {basin_data.system_eq.model.capitalize()}")
+    fig = plt.figure(figsize=(9, 9))
+    fig.canvas.manager.set_window_title(f"2D Basin of Attraction - {basin_data.system_eq.model.upper()}")
 
-    ax = fig.add_axes([0.10, 0.18, 0.70, 0.74])  # שטח המפה הראשי
+    ax = fig.add_axes([0.12, 0.16, 0.72, 0.76])
 
     y1_min, y1_max = basin_data.Y1[0, 0], basin_data.Y1[0, -1]
     y2_min, y2_max = basin_data.Y2[0, 0], basin_data.Y2[-1, 0]
     extent = [y1_min, y1_max, y2_min, y2_max]
 
-    # בחירת סוג המפה
     if mode == "sync_index":
         im = ax.imshow(basin_data.sync_grid, origin="lower", extent=extent, cmap="viridis", vmin=0.0, vmax=1.0)
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("אינדקס סנכרון (Sync Index: 1=IP, 0.5=Beating, 0=AP)")
-        title_mode = "מפת אינדקס סנכרון רציף (Sync Index)"
+        cbar.set_label("Sync Index (1=IP, 0.5=Beating, 0=AP)")
+        title_mode = "Sync Index Map"
     elif mode == "localization":
         im = ax.imshow(basin_data.loc_grid, origin="lower", extent=extent, cmap="coolwarm", vmin=0.0, vmax=1.0)
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("לוקליזציה (Localization: 0.5=שווה, 1=מתנד 1, 0=מתנד 2)")
-        title_mode = "מפת לוקליזציה של אנרגיה (Localization)"
+        cbar.set_label("Localization (0.5=Equal, 1=Osc 1, 0=Osc 2)")
+        title_mode = "Energy Localization Map"
     elif mode == "time":
         im = ax.imshow(basin_data.time_grid, origin="lower", extent=extent, cmap="plasma")
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("זמן התכנסות $t$")
-        title_mode = "מפת זמני התכנסות (Convergence Time)"
-    else:  # "attractor" (ברירת מחדל)
+        cbar.set_label("Convergence Time t")
+        title_mode = "Convergence Time Map"
+    else:  # "attractor" (תואם בדיוק ל-Fig 2)
         im = ax.imshow(basin_data.label_grid, origin="lower", extent=extent, cmap=BASIN_CMAP, norm=BASIN_NORM)
-        # מקרא (Legend) דיסקרטי יפה
         cbar = fig.colorbar(im, ax=ax, ticks=[0, 1, 2, 3, 4], fraction=0.046, pad=0.04)
         cbar.ax.set_yticklabels([
-            "Other / Unsettled (0)",
-            "In-Phase (1)",
-            "Anti-Phase (2)",
-            "Stationary Beating (3)",
-            "Zero (4)",
+            "Other / Unsettled",
+            "In-Phase (Blue)",
+            "Anti-Phase (Yellow)",
+            "Stationary Beating (Red)",
+            "Zero (Black)",
         ], fontsize=9)
-        title_mode = "מפת אגני משיכה של האטרקטורים (Basin of Attraction)"
+        title_mode = f"FIG. 2: Map of Attractors ({basin_data.system_eq.model.upper()})"
 
-    ax.set_title(f"{title_mode}\n[לחץ על כל נקודה במפה לצפייה במסלול המלא שלה]", fontsize=11, fontweight="bold", pad=12)
-    ax.set_xlabel("מיקום התחלתי מתנד 1: $y_1(0)$", fontsize=10)
-    ax.set_ylabel("מיקום התחלתי מתנד 2: $y_2(0)$", fontsize=10)
-    ax.grid(True, linestyle=":", alpha=0.4, color="white" if mode != "attractor" else "black")
+    ax.set_title(f"{title_mode}\n[Click any point to view its full trajectory]", fontsize=11, fontweight="bold", pad=10)
+    ax.set_xlabel("$y_1(0)$", fontsize=11)
+    ax.set_ylabel("$y_2(0)$", fontsize=11)
+    ax.set_xlim(y1_min, y1_max)
+    ax.set_ylim(y2_min, y2_max)
 
     # סליידר זמן בתחתית החלון
-    slider_ax = fig.add_axes([0.18, 0.06, 0.58, 0.04])
+    slider_ax = fig.add_axes([0.18, 0.05, 0.60, 0.035])
     if basin_data.snapshot_grids:
         max_snap = len(basin_data.snapshot_grids) - 1
-        time_slider = Slider(slider_ax, "זמן איטי $\\tau$", 0, max_snap, valinit=max_snap, valstep=1, color="#2a9d8f")
+        time_slider = Slider(slider_ax, "Slow Time $\\tau$", 0, max_snap, valinit=max_snap, valstep=1, color="#0072bd")
 
         def update_time(val):
             snap_idx = int(time_slider.val)
             tau_val, grid_data = basin_data.snapshot_grids[snap_idx]
             im.set_data(grid_data)
-            ax.set_title(f"{title_mode} (זמן: $\\tau = {tau_val:.1f}$)\n[לחץ על כל נקודה לצפייה במסלול]", fontsize=11, fontweight="bold")
+            ax.set_title(f"{title_mode} ($\\tau = {tau_val:.1f}$)\n[Click any point to view trajectory]", fontsize=11, fontweight="bold")
             fig.canvas.draw_idle()
 
         time_slider.on_changed(update_time)
@@ -244,23 +248,16 @@ def plot_basin(
             clicked_y1 = round(float(event.xdata), 3)
             clicked_y2 = round(float(event.ydata), 3)
             clicked_ic = [clicked_y1, 0.0, clicked_y2, 0.0]
-            print(f"🖱️ נבחרה נקודה במפה: y1={clicked_y1}, y2={clicked_y2} -> פותח גרף מסלול...")
+            print(f"[CLICK] Selected IC: y1={clicked_y1}, y2={clicked_y2} -> Opening trajectory plot...")
             plot_trajectory(basin_data.system_eq, ic=clicked_ic, show_plot=True)
 
     fig.canvas.mpl_connect("button_press_event", on_click)
 
     if save_path:
-        fig.savefig(save_path, dpi=200, bbox_inches="tight")
-        print(f"מפת האגנים נשמרה ב-{save_path}")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"[SAVED] Figure saved to: {save_path}")
 
     if show_plot:
         plt.show()
 
     return fig
-
-
-if __name__ == "__main__":
-    # הרצה מהירה לדוגמה ברזולוציה 25x25
-    eq = get_equations("rayleigh", eps=0.001, delta=0.1, eta=0.15)
-    basin = compute_basin(eq, y1_range=(-4, 4), y2_range=(-4, 4), resolution=25, workers=8)
-    plot_basin(basin, mode="attractor", show_plot=False, save_path="basin_sample.png")
