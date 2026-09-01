@@ -380,20 +380,26 @@ def run_all_experiments(
 
 def main():
     parser = argparse.ArgumentParser(description="Coupled Oscillators 8-Experiment Batch Runner")
-    parser.add_argument("--profile", type=str, choices=["0", "1", "2", "8h"], default=None,
-                        help="Execution Profile: '0' (11x11, 15m), '1' (21x21, 1h), '2' (37x37, 3h), '8h' (60x60, 8h)")
+    parser.add_argument("--profile", nargs="+", default=None,
+                        help="Execution Profile(s): '0', '1', '2', '8h', or multiple e.g. '--profile 0 1 2'")
     parser.add_argument("--res", type=int, default=None, help="Custom grid resolution (e.g. 25)")
     parser.add_argument("--tau", type=float, default=None, help="Custom max_tau (e.g. 100.0)")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel CPU workers (default: 8)")
     args = parser.parse_args()
 
+    profiles_to_run = []
+
     if args.profile is not None:
-        prof = PROFILES[args.profile]
-        resolution = prof["resolution"]
-        max_tau = prof["max_tau"]
+        for p in args.profile:
+            if p.lower() in ("all", "012", "0,1,2"):
+                profiles_to_run.extend(["0", "1", "2"])
+            elif p in PROFILES:
+                profiles_to_run.append(p)
     elif args.res is not None:
         resolution = args.res
         max_tau = args.tau if args.tau is not None else 100.0
+        run_all_experiments(resolution=resolution, max_tau=max_tau, workers=args.workers)
+        return
     else:
         # Interactive selection menu if run with plain `python main.py`
         print("\n" + "=" * 60)
@@ -404,16 +410,37 @@ def main():
         print(" [1] Profile 1: 1-Hour Schedule  (21x21, max_tau=100.0) -> ~58 mins")
         print(" [2] Profile 2: 3-Hour Schedule  (37x37, max_tau=100.0) -> ~2.9 hours")
         print(" [3] Profile 8h: Overnight 8-Hour (60x60, max_tau=100.0) -> ~7.7 hours")
+        print(" [4] Multi-Run: Run Profiles 0 + 1 + 2 Sequentially    -> ~4.1 hours")
         print("=" * 60)
 
-        choice = input("Enter choice [0/1/2/3] (default: 0): ").strip()
-        choice_map = {"0": "0", "1": "1", "2": "2", "3": "8h", "8h": "8h", "": "0"}
-        selected_prof = choice_map.get(choice, "0")
-        prof = PROFILES[selected_prof]
-        resolution = prof["resolution"]
-        max_tau = prof["max_tau"]
+        choice = input("Enter choice [0/1/2/3/4] (default: 4): ").strip()
+        if choice in ("4", "all", "012", "0,1,2", ""):
+            profiles_to_run = ["0", "1", "2"]
+        elif choice in ("3", "8h"):
+            profiles_to_run = ["8h"]
+        elif choice in PROFILES:
+            profiles_to_run = [choice]
+        else:
+            profiles_to_run = ["0"]
 
-    run_all_experiments(resolution=resolution, max_tau=max_tau, workers=args.workers)
+    print(f"\n[QUEUE] Queued {len(profiles_to_run)} profile suite(s): {', '.join(profiles_to_run)}")
+    t_suite_start = time.perf_counter()
+
+    for idx, p_key in enumerate(profiles_to_run, 1):
+        prof = PROFILES[p_key]
+        print("\n" + "#" * 65)
+        print(f"[RUNNING PROFILE {idx}/{len(profiles_to_run)}] {prof['name']} (Est: {prof['est_time']})")
+        print("#" * 65)
+        run_all_experiments(
+            resolution=prof["resolution"],
+            max_tau=prof["max_tau"],
+            workers=args.workers,
+        )
+
+    t_suite_total = time.perf_counter() - t_suite_start
+    print("\n" + "=" * 65)
+    print(f"[ALL QUEUED SUITES FINISHED] Completed in {t_suite_total/3600:.2f} hours ({t_suite_total/60:.1f} mins)!")
+    print("=" * 65)
 
 
 if __name__ == "__main__":
