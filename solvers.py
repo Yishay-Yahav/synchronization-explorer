@@ -4,12 +4,11 @@ Coupled Oscillators: Multi-Method & Parallel Batch Solver Engine.
 Supported Models:
 - "rayleigh": Velocity-dependent nonlinear damping
 - "vdp": Displacement-dependent nonlinear damping
-- "none": Linear oscillator coupling (no nonlinear damping)
+- "none": Linear oscillator (no nonlinear damping)
 
-Supported Solver Methods (method):
-- "numba_rk4": Accelerated JIT compiled RK4 (50x-100x faster, default)
-- "dop853": SciPy 8th-order Runge-Kutta (High precision adaptive)
-- "rk45": SciPy 5th-order Runge-Kutta
+Coupling Modes:
+- "linear": eps * (y1 - y2)
+- "none": uncoupled (c12 = 0)
 """
 
 from __future__ import annotations
@@ -49,12 +48,17 @@ def compute_modal(times: np.ndarray, states: np.ndarray, eps: float):
 
 # --- מנוע JIT מואץ ב-Numba (מהירות קוד C) ---
 @numba.njit(fastmath=True)
-def _rk4_step_jit(state, eps, delta, eta, duffing, model_id, dt):
-    """צעד בודד של RK4 בקוד מכונה (model_id: 0=none, 1=rayleigh, 2=vdp)"""
+def _rk4_step_jit(state, eps, delta, eta, duffing, model_id, has_coupling, dt):
+    """צעד בודד של RK4 בקוד מכונה"""
     def eval_rhs(s):
         y1, v1, y2, v2 = s[0], s[1], s[2], s[3]
-        c12 = eps * (y1 - y2)
-        c21 = eps * (y2 - y1)
+        if has_coupling:
+            c12 = eps * (y1 - y2)
+            c21 = eps * (y2 - y1)
+        else:
+            c12 = 0.0
+            c21 = 0.0
+
         duff1 = eps * duffing * (y1**3)
         duff2 = eps * duffing * (y2**3)
 
@@ -78,7 +82,7 @@ def _rk4_step_jit(state, eps, delta, eta, duffing, model_id, dt):
 
 
 @numba.njit(fastmath=True)
-def _numba_integrate_chunk(state, eps, delta, eta, duffing, model_id, t_start, t_end, dt, n_points):
+def _numba_integrate_chunk(state, eps, delta, eta, duffing, model_id, has_coupling, t_start, t_end, dt, n_points):
     """אינטגרציה של מקטע שלם בלולאת C מהירה"""
     total_steps = int(np.ceil((t_end - t_start) / dt))
     actual_dt = (t_end - t_start) / total_steps
@@ -96,7 +100,7 @@ def _numba_integrate_chunk(state, eps, delta, eta, duffing, model_id, t_start, t
     saved_idx += 1
 
     for step in range(1, total_steps + 1):
-        curr_s = _rk4_step_jit(curr_s, eps, delta, eta, duffing, model_id, actual_dt)
+        curr_s = _rk4_step_jit(curr_s, eps, delta, eta, duffing, model_id, has_coupling, actual_dt)
         curr_t = t_start + step * actual_dt
         if step % save_interval == 0 and saved_idx < n_points:
             times[saved_idx] = curr_t
@@ -127,6 +131,7 @@ def _solve_single_ic(
     eps = getattr(system_eq, "eps", 0.001)
     rhs_fn = getattr(system_eq, "rhs", system_eq)
     model = getattr(system_eq, "model", "rayleigh")
+    has_coupling = getattr(system_eq, "has_coupling", True)
 
     if model in ("vdp", "van_der_pol"):
         model_id = 2
@@ -155,7 +160,7 @@ def _solve_single_ic(
 
         if method == "numba_rk4":
             t_chunk, y_chunk = _numba_integrate_chunk(
-                state, eps, delta, eta, duffing, model_id, t_curr, t_next, rk4_dt, points_per_chunk
+                state, eps, delta, eta, duffing, model_id, has_coupling, t_curr, t_next, rk4_dt, points_per_chunk
             )
         else:
             t_eval = np.linspace(t_curr, t_next, points_per_chunk)
@@ -254,8 +259,6 @@ def solve(
 
 if __name__ == "__main__":
     from equations import get_equations
-    import time
-
-    eq_none = get_equations("none", eps=0.001, delta=0.1, eta=0.15)
-    res_none = solve(eq_none, [[2.0, 0.0, 0.0, 0.0]], method="numba_rk4")
-    print(f"מודל ללא (none): התכנס ב-t={res_none[0].convergence_time:.1f}, שיפוע={res_none[0].slope:.2e}")
+    eq_un = get_equations("rayleigh", coupling="none")
+    res_un = solve(eq_un, [[2.0, 0.0, 0.0, 0.0]])
+    print(f"ללא צימוד: התכנס ב-t={res_un[0].convergence_time:.1f}")

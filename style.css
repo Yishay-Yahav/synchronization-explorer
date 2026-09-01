@@ -14,7 +14,6 @@
   --accent-blue: #3b82f6;
   --accent-teal: #10b981;
   --accent-orange: #f97316;
-  --accent-purple: #a855f7;
   --accent-red: #ef4444;
 
   --badge-beating: #e76f51;
@@ -120,7 +119,7 @@ body {
 /* Layout */
 .app-layout {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 340px 1fr;
   flex: 1;
   min-height: calc(100vh - 67px);
 }
@@ -151,23 +150,18 @@ body {
   background: linear-gradient(135deg, #0284c7, #0369a1);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 8px 18px;
-  font-weight: 700;
-  font-size: 0.9rem;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 0.85rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.4);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
 }
 
 .btn-primary:hover {
   background: linear-gradient(135deg, #0369a1, #075985);
   transform: translateY(-1px);
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .panel-scroll {
@@ -183,7 +177,7 @@ body {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--bg-card-border);
   border-radius: var(--radius-md);
-  padding: 14px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -197,189 +191,6 @@ body {
   color: var(--accent-cyan);
 }
 
-/* Presets Grid */
-.presets-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.btn-preset {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-input);
-  color: var(--text-muted);
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 0.76rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: center;
-}
-
-.btn-preset:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-main);
-}
-
-.btn-preset.active {
-  background: rgba(0, 229, 255, 0.15);
-  color: var(--accent-cyan);
-  border-color: var(--accent-cyan);
-  box-shadow: 0 0 8px rgba(0, 229, 255, 0.2);
-}
-
-/* ==========================================================================
-   Vertical Terms List (Row by Row)
-   ========================================================================== */
-.terms-vertical-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.term-row {
-  background: #0d121d;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  transition: all 0.2s ease;
-}
-
-.term-row.term-active {
-  background: #111a2e;
-  border-color: rgba(0, 229, 255, 0.3);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-.term-row.term-inactive {
-  opacity: 0.45;
-  background: #090d16;
-  border-color: rgba(255, 255, 255, 0.03);
-}
-
-.term-core {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.term-scale {
-  background: rgba(0, 229, 255, 0.03);
-  border-color: rgba(0, 229, 255, 0.1);
-  padding: 8px 12px;
-}
-
-.term-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.term-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  width: 100%;
-}
-
-.term-toggle input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-  accent-color: var(--accent-cyan);
-}
-
-.term-tag {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--accent-cyan);
-}
-
-.core-tag { color: #fff; }
-.tag-duffing { color: var(--accent-purple); }
-.tag-vdp { color: var(--accent-teal); }
-.tag-rayleigh { color: var(--accent-orange); }
-.tag-gamma { color: var(--text-muted); }
-
-.term-math {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'Fira Code', monospace;
-  font-size: 0.92rem;
-  color: var(--text-main);
-  padding-right: 6px;
-}
-
-.term-math-multi {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-family: 'Fira Code', monospace;
-  font-size: 0.92rem;
-  padding-right: 6px;
-}
-
-.term-math-subrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.subrow-indent {
-  padding-right: 24px;
-}
-
-.math-prefix {
-  color: var(--accent-orange);
-  font-weight: 700;
-}
-
-.math-label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.math-symbol {
-  color: #cbd5e1;
-}
-
-.math-input {
-  background: #1a2333;
-  border: 1px solid var(--border-input);
-  color: #fff;
-  font-family: 'Fira Code', monospace;
-  font-weight: 600;
-  font-size: 0.85rem;
-  padding: 4px 6px;
-  width: 72px;
-  border-radius: var(--radius-sm);
-  text-align: center;
-  outline: none;
-  transition: all 0.2s;
-}
-
-.math-input:focus {
-  border-color: var(--accent-cyan);
-  background: #1e293b;
-  box-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
-}
-
-.math-input-sm {
-  width: 58px;
-}
-
-/* Specific Term Accents */
-#term-duffing.term-active { border-color: rgba(168, 85, 247, 0.4); }
-#term-vdp.term-active { border-color: rgba(16, 185, 129, 0.4); }
-#term-rayleigh.term-active { border-color: rgba(249, 115, 22, 0.4); }
-#term-gamma.term-active { border-color: rgba(156, 163, 175, 0.4); }
-
-/* Inputs and Toggles */
 .input-row {
   display: flex;
   flex-direction: column;
@@ -417,6 +228,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  transition: opacity 0.2s, filter 0.2s;
+}
+
+.disabled-field {
+  opacity: 0.35;
+  pointer-events: none;
+  filter: grayscale(1);
 }
 
 .input-field label {

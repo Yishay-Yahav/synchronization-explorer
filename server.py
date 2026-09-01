@@ -25,24 +25,19 @@ def run_full_timeseries_analysis(params: dict) -> dict:
     Runs simulation for given parameters and returns full timeseries + fine-grained
     data so the client can scrub and compute live metrics at any point in time.
     """
-    # 1. חילוץ פרמטרים של המשוואה
-    eps_coupling = float(params.get("eps_coupling", 0.001))
+    model = params.get("model", "rayleigh")
+    coupling = params.get("coupling", "linear")
+    eps = float(params.get("eps", 0.001))
+    delta = float(params.get("delta", 0.1))
+    eta = float(params.get("eta", 0.15))
     duffing = float(params.get("duffing", 0.0))
-    delta_vdp = float(params.get("delta_vdp", 0.0))
-    eta_vdp = float(params.get("eta_vdp", 0.15))
-    delta_rayleigh = float(params.get("delta_rayleigh", 0.1))
-    eta_rayleigh = float(params.get("eta_rayleigh", 0.15))
-    gamma = float(params.get("gamma", 0.0))
-    eps_scale = float(params.get("eps_scale", 0.001))
 
-    # 2. תנאי התחלה
     y1 = float(params.get("y1", 2.0))
     v1 = float(params.get("v1", 0.0))
     y2 = float(params.get("y2", 0.0))
     v2 = float(params.get("v2", 0.0))
     ic = [y1, v1, y2, v2]
 
-    # 3. הגדרות פותרן
     method = params.get("method", "numba_rk4")
     adaptive = bool(params.get("adaptive", True))
     chunk_tau = float(params.get("chunk_tau", 3.0))
@@ -51,18 +46,8 @@ def run_full_timeseries_analysis(params: dict) -> dict:
     zero_tol = float(params.get("zero_tol", 0.05))
     rk4_dt = float(params.get("rk4_dt", 0.05))
 
-    # 4. יצירת המשוואה והרצת הפותרן
-    eq = get_equations(
-        eps_coupling=eps_coupling,
-        duffing=duffing,
-        delta_vdp=delta_vdp,
-        eta_vdp=eta_vdp,
-        delta_rayleigh=delta_rayleigh,
-        eta_rayleigh=eta_rayleigh,
-        gamma=gamma,
-        eps_scale=eps_scale,
-    )
-
+    # 1. יצירת המשוואה והרצת הפותרן
+    eq = get_equations(model=model, eps=eps, delta=delta, eta=eta, duffing=duffing, coupling=coupling)
     windows = solve(
         eq,
         [ic],
@@ -78,14 +63,14 @@ def run_full_timeseries_analysis(params: dict) -> dict:
     final_win = windows[0]
     final_class = classify([final_win])[0]
 
-    # 5. דגימה רציפה של כל המסלול לגרף ולסליידר (עד 1,500 נקודות)
+    # 2. דגימה רציפה של כל המסלול לגרף ולסליידר (עד 1,500 נקודות)
     total_points = len(final_win.times)
     stride = max(1, total_points // 1500)
     idx = np.arange(0, total_points, stride)
 
     return {
         "success": True,
-        "eps": eq.eps,
+        "eps": eps,
         "zero_tol": zero_tol,
         "slope_tol": slope_tol,
         "convergence_time": float(final_win.convergence_time),

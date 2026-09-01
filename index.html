@@ -40,15 +40,22 @@
       </div>
 
       <div class="panel-scroll">
-        <!-- 1. מודל פיזיקלי -->
+        <!-- 1. מודל פיזיקלי וצימוד -->
         <div class="control-group">
-          <label class="group-title">1. מודל פיזיקלי</label>
+          <label class="group-title">1. מודל פיזיקלי וצימוד</label>
           <div class="input-row">
-            <label for="param-model">סוג משוואה:</label>
+            <label for="param-model">סוג משוואה (אי-לינאריות):</label>
             <select id="param-model" class="input-select">
               <option value="rayleigh" selected>Rayleigh (שיכוך תלוי מהירות v)</option>
               <option value="vdp">Van der Pol (שיכוך תלוי מיקום y)</option>
               <option value="none">ללא (לינארי / ללא שיכוך אי-לינארי)</option>
+            </select>
+          </div>
+          <div class="input-row">
+            <label for="param-coupling">מצב צימוד (Coupling):</label>
+            <select id="param-coupling" class="input-select">
+              <option value="linear" selected>צימוד לינארי: ε·(y₁ - y₂)</option>
+              <option value="none">ללא צימוד (מתנדים בלתי-תלויים)</option>
             </select>
           </div>
         </div>
@@ -57,20 +64,20 @@
         <div class="control-group">
           <label class="group-title">2. פרמטרים פיזיקליים</label>
           <div class="input-grid">
-            <div class="input-field">
+            <div class="input-field" id="field-eps">
               <label for="param-eps">אפסילון (ε):</label>
               <input type="number" id="param-eps" value="0.001" step="0.0005" min="0.0001">
             </div>
-            <div class="input-field">
+            <div class="input-field" id="field-delta">
               <label for="param-delta">דלתא (δ):</label>
               <input type="number" id="param-delta" value="0.1" step="0.02" min="0.0">
             </div>
-            <div class="input-field">
+            <div class="input-field" id="field-eta">
               <label for="param-eta">אטה (η):</label>
               <input type="number" id="param-eta" value="0.15" step="0.02" min="0.0">
             </div>
-            <div class="input-field">
-              <label for="param-duffing">דאפינג ממעלה 3 (Duffing):</label>
+            <div class="input-field" id="field-duffing">
+              <label for="param-duffing">דאפינג ממעלה 3:</label>
               <input type="number" id="param-duffing" value="0.0" step="0.1" min="0.0" title="לוקליזציה">
             </div>
           </div>
