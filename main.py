@@ -391,6 +391,8 @@ def main():
         for p in args.profile:
             if p.lower() in ("all", "012", "0,1,2"):
                 profiles_to_run.extend(["0", "1", "2"])
+            elif p in ("3", "8h", "8"):
+                profiles_to_run.append("8h")
             elif p in PROFILES:
                 profiles_to_run.append(p)
     elif args.res is not None:
