@@ -1,22 +1,25 @@
 """
-Coupled Oscillators Synchronization Explorer: Automated 6-Experiment Suite (main.py).
+Coupled Oscillators Synchronization Explorer: Automated 8-Experiment Suite (main.py).
 
-Runs 6 distinct oscillator setups:
-1. Linear Uncoupled (pure linear, no coupling)
-2. Linear Coupled (linear oscillators with coupling)
-3. Coupled Van der Pol (reproducing publication Fig. 2)
-4. Coupled Rayleigh (Rayleigh oscillators with coupling)
-5. Coupled Duffing (linear coupling with Duffing cubic stiffness)
-6. Duffing Only (uncoupled oscillators with Duffing cubic stiffness)
+Experiment Suite:
+1. Linear Uncoupled Oscillators
+2. Linear Coupled Oscillators
+3. Coupled Van der Pol (Fig. 2)
+4. Coupled Rayleigh Oscillators
+5. Coupled Linear with Duffing
+6. Uncoupled Duffing Only
+7. Coupled Van der Pol with Duffing
+8. Coupled Rayleigh with Duffing
 
-For each setup:
-- Computes a 10x10 initial condition basin up to max_tau = 60.0 on 8 CPU workers.
-- Generates 5 output plots saved in dedicated subdirectories:
-  1. 2D Attractors Map (discrete)
-  2. 2D Sync Index Map (continuous)
-  3. 2D Localization Map (continuous)
-  4. Final Physical Coordinates (y1, y2 in final converged window)
-  5. Final Modal Envelopes (|mu0|, |mu1| in final converged window)
+Directory & File Naming Architecture:
+- Root Run Directory: experiments_res{res}x{res}_tau{max_tau}/
+- Subdirectory: exp{id}_{model}_{coupling}_eps{eps}_delta{delta}_eta{eta}_duff{duffing}/
+- Output Figures (5 per experiment):
+  1. ..._1_attractors.png
+  2. ..._2_sync_index.png
+  3. ..._3_localization.png
+  4. ..._4_final_physical_coords.png
+  5. ..._5_final_modal_envelopes.png
 """
 
 from __future__ import annotations
@@ -29,12 +32,10 @@ from equations import get_equations, SystemEquation
 from plot_basin import compute_basin, plot_basin, BasinData
 
 
-OUTPUT_BASE_DIR = "experiments"
-
 EXPERIMENTS = [
     {
         "id": 1,
-        "folder": "1_linear_uncoupled",
+        "name": "linear_uncoupled",
         "title": "1. Linear Uncoupled Oscillators",
         "params": {
             "model": "none",
@@ -47,7 +48,7 @@ EXPERIMENTS = [
     },
     {
         "id": 2,
-        "folder": "2_linear_coupled",
+        "name": "linear_coupled",
         "title": "2. Linear Coupled Oscillators",
         "params": {
             "model": "none",
@@ -60,7 +61,7 @@ EXPERIMENTS = [
     },
     {
         "id": 3,
-        "folder": "3_vdp_coupled",
+        "name": "vdp_coupled",
         "title": "3. Coupled Van der Pol (Fig. 2)",
         "params": {
             "model": "vdp",
@@ -73,7 +74,7 @@ EXPERIMENTS = [
     },
     {
         "id": 4,
-        "folder": "4_rayleigh_coupled",
+        "name": "rayleigh_coupled",
         "title": "4. Coupled Rayleigh Oscillators",
         "params": {
             "model": "rayleigh",
@@ -86,8 +87,8 @@ EXPERIMENTS = [
     },
     {
         "id": 5,
-        "folder": "5_duffing_coupled",
-        "title": "5. Coupled Oscillators with Duffing",
+        "name": "duffing_coupled",
+        "title": "5. Coupled Linear with Duffing",
         "params": {
             "model": "none",
             "coupling": "linear",
@@ -99,8 +100,8 @@ EXPERIMENTS = [
     },
     {
         "id": 6,
-        "folder": "6_duffing_only_uncoupled",
-        "title": "6. Uncoupled Oscillators with Duffing Only",
+        "name": "duffing_only_uncoupled",
+        "title": "6. Uncoupled Duffing Only",
         "params": {
             "model": "none",
             "coupling": "none",
@@ -110,7 +111,46 @@ EXPERIMENTS = [
             "duffing": 1.0,
         },
     },
+    {
+        "id": 7,
+        "name": "vdp_duffing_coupled",
+        "title": "7. Coupled Van der Pol with Duffing",
+        "params": {
+            "model": "vdp",
+            "coupling": "linear",
+            "eps": 0.001,
+            "delta": 0.1,
+            "eta": 0.1,
+            "duffing": 1.0,
+        },
+    },
+    {
+        "id": 8,
+        "name": "rayleigh_duffing_coupled",
+        "title": "8. Coupled Rayleigh with Duffing",
+        "params": {
+            "model": "rayleigh",
+            "coupling": "linear",
+            "eps": 0.001,
+            "delta": 0.1,
+            "eta": 0.15,
+            "duffing": 1.0,
+        },
+    },
 ]
+
+
+def format_param_tag(exp_id: int, name: str, params: dict) -> str:
+    """Generates a clean, unambiguous identifier string containing all key parameters."""
+    return (
+        f"exp{exp_id}_{name}_"
+        f"m_{params['model']}_"
+        f"c_{params['coupling']}_"
+        f"eps{params['eps']}_"
+        f"delta{params['delta']}_"
+        f"eta{params['eta']}_"
+        f"duff{params['duffing']}"
+    )
 
 
 def plot_final_physical_coords(basin_data: BasinData, save_path: str, title: str):
@@ -201,22 +241,23 @@ def plot_final_modal_envelopes(basin_data: BasinData, save_path: str, title: str
 
 def run_single_experiment(
     exp_config: dict,
+    base_run_dir: str,
     resolution: int = 10,
     max_tau: float = 60.0,
     chunk_tau: float = 3.0,
     y_range: tuple[float, float] = (-20.0, 20.0),
     workers: int = 8,
 ):
-    """Runs a single experiment and generates 5 output figures."""
-    folder_name = exp_config["folder"]
-    target_dir = os.path.join(OUTPUT_BASE_DIR, folder_name)
+    """Runs a single experiment and generates 5 output figures in a dedicated parameter-encoded subfolder."""
+    p = exp_config["params"]
+    param_tag = format_param_tag(exp_config["id"], exp_config["name"], p)
+    target_dir = os.path.join(base_run_dir, param_tag)
     os.makedirs(target_dir, exist_ok=True)
 
-    p = exp_config["params"]
     print("\n" + "=" * 60)
-    print(f"[EXPERIMENT {exp_config['id']}/6] {exp_config['title']}")
-    print(f"[FOLDER] Target Directory: {target_dir}")
-    print(f"[PARAMS] Model={p['model']}, Coupling={p['coupling']}, eps={p['eps']}, duffing={p['duffing']}")
+    print(f"[EXPERIMENT {exp_config['id']}/8] {exp_config['title']}")
+    print(f"[SUBFOLDER] {target_dir}")
+    print(f"[PARAMS] Model={p['model']}, Coupling={p['coupling']}, eps={p['eps']}, delta={p['delta']}, eta={p['eta']}, duffing={p['duffing']}")
     print("=" * 60)
 
     # 1. Instantiate system equations
@@ -243,29 +284,29 @@ def run_single_experiment(
     )
 
     # 3. Generate and save 5 plots
-    prefix = f"{folder_name}_tau{int(max_tau)}_res{resolution}x{resolution}"
+    file_prefix = f"{param_tag}_tau{int(max_tau)}_res{resolution}x{resolution}"
 
     # Plot 1: Attractors Map (discrete)
-    path_attractor = os.path.join(target_dir, f"{prefix}_1_attractors.png")
+    path_attractor = os.path.join(target_dir, f"{file_prefix}_1_attractors.png")
     plot_basin(basin_data, mode="attractor", show_plot=False, save_path=path_attractor)
 
     # Plot 2: Sync Index Map (continuous: 0 to 1)
-    path_sync = os.path.join(target_dir, f"{prefix}_2_sync_index.png")
+    path_sync = os.path.join(target_dir, f"{file_prefix}_2_sync_index.png")
     plot_basin(basin_data, mode="sync_index", show_plot=False, save_path=path_sync)
 
     # Plot 3: Localization Map (continuous: 0 to 1)
-    path_loc = os.path.join(target_dir, f"{prefix}_3_localization.png")
+    path_loc = os.path.join(target_dir, f"{file_prefix}_3_localization.png")
     plot_basin(basin_data, mode="localization", show_plot=False, save_path=path_loc)
 
     # Plot 4: Physical coordinates in final window
-    path_phys = os.path.join(target_dir, f"{prefix}_4_final_physical_coords.png")
+    path_phys = os.path.join(target_dir, f"{file_prefix}_4_final_physical_coords.png")
     plot_final_physical_coords(basin_data, save_path=path_phys, title=exp_config["title"])
 
     # Plot 5: Modal envelopes in final window
-    path_modal = os.path.join(target_dir, f"{prefix}_5_final_modal_envelopes.png")
+    path_modal = os.path.join(target_dir, f"{file_prefix}_5_final_modal_envelopes.png")
     plot_final_modal_envelopes(basin_data, save_path=path_modal, title=exp_config["title"])
 
-    print(f"[DONE] Completed Experiment {exp_config['id']}! 5 plots saved in {target_dir}\n")
+    print(f"[DONE] Completed Experiment {exp_config['id']}! 5 plots saved in: {target_dir}\n")
 
 
 def run_all_experiments(
@@ -274,16 +315,25 @@ def run_all_experiments(
     chunk_tau: float = 3.0,
     workers: int = 8,
 ):
-    """Runs all 6 experiments sequentially and saves 5 plots for each (total 30 figures)."""
+    """
+    Runs all 8 experiments sequentially.
+    Root folder is dynamically named: experiments_res{resolution}x{resolution}_tau{int(max_tau)}
+    """
+    base_run_dir = f"experiments_res{resolution}x{resolution}_tau{int(max_tau)}"
+    os.makedirs(base_run_dir, exist_ok=True)
+
     print("\n" + "#" * 60)
-    print(f"[START] Running all 6 Experiments ({resolution}x{resolution} grid, max_tau={max_tau}, workers={workers})")
-    print(f"[OUTPUT] Base directory: '{OUTPUT_BASE_DIR}/'")
+    print(f"[START] Running all 8 Experiments Suite")
+    print(f"[RUN CONFIG] Resolution: {resolution}x{resolution} ({resolution**2} pts/exp)")
+    print(f"[RUN CONFIG] Max Tau: {max_tau}, Workers: {workers}")
+    print(f"[RUN ROOT DIR] '{base_run_dir}/'")
     print("#" * 60)
 
     t_start = time.perf_counter()
     for exp in EXPERIMENTS:
         run_single_experiment(
             exp,
+            base_run_dir=base_run_dir,
             resolution=resolution,
             max_tau=max_tau,
             chunk_tau=chunk_tau,
@@ -292,8 +342,8 @@ def run_all_experiments(
 
     t_total = time.perf_counter() - t_start
     print("\n" + "=" * 60)
-    print(f"[ALL COMPLETE] All 6 experiments finished in {t_total:.2f}s!")
-    print(f"[SUMMARY] Total 30 figures saved across 6 directories in '{OUTPUT_BASE_DIR}/'.")
+    print(f"[ALL COMPLETE] All 8 experiments finished in {t_total:.2f}s!")
+    print(f"[SUMMARY] Total 40 figures saved across 8 subdirectories in '{base_run_dir}/'.")
     print("=" * 60)
 
 
