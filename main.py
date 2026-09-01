@@ -13,7 +13,7 @@ Usage:
   python main.py --profile 1         (run 1-hour profile)
   python main.py --profile 2         (run 3-hour profile)
   python main.py --profile 8h        (run 8-hour overnight suite)
-  python main.py --res 25 --tau 80   (custom parameters)
+  python main.py --profile 0 1 2     (run profiles 0, 1, 2 sequentially)
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ PROFILES = {
 
 
 def format_param_tag(exp_id: int, name: str, params: dict) -> str:
-    """Generates a clean, unambiguous identifier string containing all key parameters."""
+    """Generates a clean identifier string containing all key parameters."""
     return (
         f"exp{exp_id}_{name}_"
         f"m_{params['model']}_"
@@ -308,36 +308,34 @@ def run_single_experiment(
         record_evolution=True,
     )
 
-    # 3. Save serialized BasinData object for interactive inspection with slider
+    # 3. Save serialized BasinData object for interactive inspection with slider (overwrites cleanly)
     data_pkl_path = os.path.join(target_dir, "basin_data.pkl")
     with open(data_pkl_path, "wb") as f:
         pickle.dump(basin_data, f)
     print(f"[SAVED] Serialized basin data saved to: {data_pkl_path}")
 
-    # 4. Generate and save 5 plots
-    file_prefix = f"{param_tag}_tau{int(max_tau)}_res{resolution}x{resolution}"
-
+    # 4. Generate and save 5 clean plots (overwrites cleanly)
     # Plot 1: Attractors Map (discrete)
-    path_attractor = os.path.join(target_dir, f"{file_prefix}_1_attractors.png")
+    path_attractor = os.path.join(target_dir, "1_attractors.png")
     plot_basin(basin_data, mode="attractor", show_plot=False, save_path=path_attractor)
 
     # Plot 2: Sync Index Map (continuous: 0 to 1)
-    path_sync = os.path.join(target_dir, f"{file_prefix}_2_sync_index.png")
+    path_sync = os.path.join(target_dir, "2_sync_index.png")
     plot_basin(basin_data, mode="sync_index", show_plot=False, save_path=path_sync)
 
     # Plot 3: Localization Map (continuous: 0 to 1)
-    path_loc = os.path.join(target_dir, f"{file_prefix}_3_localization.png")
+    path_loc = os.path.join(target_dir, "3_localization.png")
     plot_basin(basin_data, mode="localization", show_plot=False, save_path=path_loc)
 
     # Plot 4: Physical coordinates in final window
-    path_phys = os.path.join(target_dir, f"{file_prefix}_4_final_physical_coords.png")
+    path_phys = os.path.join(target_dir, "4_final_physical_coords.png")
     plot_final_physical_coords(basin_data, save_path=path_phys, title=exp_config["title"])
 
     # Plot 5: Modal envelopes in final window
-    path_modal = os.path.join(target_dir, f"{file_prefix}_5_final_modal_envelopes.png")
+    path_modal = os.path.join(target_dir, "5_final_modal_envelopes.png")
     plot_final_modal_envelopes(basin_data, save_path=path_modal, title=exp_config["title"])
 
-    print(f"[DONE] Completed Experiment {exp_config['id']}! 5 plots + interactive data saved in: {target_dir}\n")
+    print(f"[DONE] Completed Experiment {exp_config['id']}! 5 plots + data cleanly saved in: {target_dir}\n")
 
 
 def run_all_experiments(
@@ -374,7 +372,7 @@ def run_all_experiments(
     t_total = time.perf_counter() - t_start
     print("\n" + "=" * 60)
     print(f"[ALL COMPLETE] All 8 experiments finished in {t_total:.2f}s ({t_total/60:.1f} mins)!")
-    print(f"[SUMMARY] Total 40 figures + 8 interactive data models saved in '{base_run_dir}/'.")
+    print(f"[SUMMARY] Total 40 figures + 8 data models saved in '{base_run_dir}/'.")
     print("=" * 60)
 
 
