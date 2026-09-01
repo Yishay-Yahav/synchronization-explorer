@@ -7,7 +7,7 @@
   <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <!-- Chart.js for high performance smooth plotting -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="style.css">
@@ -20,7 +20,7 @@
       <div class="logo-icon">⚡</div>
       <div>
         <h1>Synchronization Explorer <span class="badge-version">v2.0</span></h1>
-        <p class="subtitle">משוואת תנועה כללית • עריכת איברים ומקדמים שורה אחר שורה</p>
+        <p class="subtitle">חוקר מתנדים מצומדים • ריילי, ואן דר פול, ולוקליזציית דאפינג</p>
       </div>
     </div>
     <div class="header-status">
@@ -32,149 +32,53 @@
   <!-- Main Container Layout -->
   <div class="app-layout">
 
-    <!-- Sidebar: Equation Terms (Row by Row) & Controls -->
+    <!-- Sidebar: All Parameters Control Panel -->
     <aside class="control-panel">
       <div class="panel-header">
-        <h2>📐 משוואת התנועה והגדרות</h2>
+        <h2>⚙️ פרמטרי מערכת ופותרן</h2>
         <button id="btn-run" class="btn-primary">▶ הרץ חישוב</button>
       </div>
 
       <div class="panel-scroll">
-
-        <!-- Preset Buttons -->
+        <!-- 1. מודל פיזיקלי -->
         <div class="control-group">
-          <label class="group-title">תבניות משוואה מוכנות</label>
-          <div class="presets-grid">
-            <button class="btn-preset active" data-preset="rayleigh">ריילי מצומד</button>
-            <button class="btn-preset" data-preset="vdp">ואן דר פול</button>
-            <button class="btn-preset" data-preset="uncoupled">ללא צימוד (2 נפרדים)</button>
-            <button class="btn-preset" data-preset="duffing">דאפינג ולוקליזציה</button>
+          <label class="group-title">1. מודל פיזיקלי</label>
+          <div class="input-row">
+            <label for="param-model">סוג משוואה:</label>
+            <select id="param-model" class="input-select">
+              <option value="rayleigh" selected>Rayleigh (שיכוך תלוי מהירות v)</option>
+              <option value="vdp">Van der Pol (שיכוך תלוי מיקום y)</option>
+              <option value="none">ללא (לינארי / ללא שיכוך אי-לינארי)</option>
+            </select>
           </div>
         </div>
 
-        <!-- Equation Terms: Row by Row -->
+        <!-- 2. פרמטרים פיזיקליים -->
         <div class="control-group">
-          <label class="group-title">איברי המשוואה (שורה אחר שורה)</label>
-          <div class="terms-vertical-list">
-
-            <!-- איבר 0: בסיס הרמוני -->
-            <div class="term-row term-core">
-              <div class="term-header">
-                <span class="term-tag core-tag">איבר בסיס הרמוני</span>
-              </div>
-              <div class="term-math">
-                ÿ₁ + y₁ = − [ איברים בהמשך ]
-              </div>
+          <label class="group-title">2. פרמטרים פיזיקליים</label>
+          <div class="input-grid">
+            <div class="input-field">
+              <label for="param-eps">אפסילון (ε):</label>
+              <input type="number" id="param-eps" value="0.001" step="0.0005" min="0.0001">
             </div>
-
-            <!-- איבר 1: צימוד -->
-            <div id="term-coupling" class="term-row term-active">
-              <div class="term-header">
-                <label class="term-toggle">
-                  <input type="checkbox" id="toggle-coupling" checked>
-                  <span class="term-tag">1. צימוד לינארי (Coupling)</span>
-                </label>
-              </div>
-              <div class="term-math">
-                <span class="math-prefix">+</span>
-                <span class="math-label">ε_c =</span>
-                <input type="number" id="eq-eps-coupling" value="0.001" step="0.0005" min="0.0" class="math-input" title="עוצמת הצימוד">
-                <span class="math-symbol">· (y₁ − y₂)</span>
-              </div>
+            <div class="input-field">
+              <label for="param-delta">דלתא (δ):</label>
+              <input type="number" id="param-delta" value="0.1" step="0.02" min="0.0">
             </div>
-
-            <!-- איבר 2: דאפינג -->
-            <div id="term-duffing" class="term-row term-inactive">
-              <div class="term-header">
-                <label class="term-toggle">
-                  <input type="checkbox" id="toggle-duffing">
-                  <span class="term-tag tag-duffing">2. דאפינג ממעלה 3 (Duffing)</span>
-                </label>
-              </div>
-              <div class="term-math">
-                <span class="math-prefix">+</span>
-                <span class="math-label">ε · β =</span>
-                <input type="number" id="eq-duffing" value="0.0" step="0.5" min="0.0" class="math-input" title="מקדם דאפינג">
-                <span class="math-symbol">· y₁³</span>
-              </div>
+            <div class="input-field">
+              <label for="param-eta">אטה (η):</label>
+              <input type="number" id="param-eta" value="0.15" step="0.02" min="0.0">
             </div>
-
-            <!-- איבר 3: ואן דר פול -->
-            <div id="term-vdp" class="term-row term-inactive">
-              <div class="term-header">
-                <label class="term-toggle">
-                  <input type="checkbox" id="toggle-vdp">
-                  <span class="term-tag tag-vdp">3. שיכוך ואן דר פול (VdP)</span>
-                </label>
-              </div>
-              <div class="term-math-multi">
-                <div class="term-math-subrow">
-                  <span class="math-prefix">+</span>
-                  <span class="math-label">ε · δ_vdp =</span>
-                  <input type="number" id="eq-delta-vdp" value="0.1" step="0.02" min="0.0" class="math-input">
-                  <span class="math-symbol">· ẏ₁ · (1 − y₁² +</span>
-                </div>
-                <div class="term-math-subrow subrow-indent">
-                  <span class="math-label">η_vdp =</span>
-                  <input type="number" id="eq-eta-vdp" value="0.15" step="0.02" min="0.0" class="math-input math-input-sm">
-                  <span class="math-symbol">· y₁⁴)</span>
-                </div>
-              </div>
+            <div class="input-field">
+              <label for="param-duffing">דאפינג ממעלה 3 (Duffing):</label>
+              <input type="number" id="param-duffing" value="0.0" step="0.1" min="0.0" title="לוקליזציה">
             </div>
-
-            <!-- איבר 4: ריילי -->
-            <div id="term-rayleigh" class="term-row term-active">
-              <div class="term-header">
-                <label class="term-toggle">
-                  <input type="checkbox" id="toggle-rayleigh" checked>
-                  <span class="term-tag tag-rayleigh">4. שיכוך ריילי (Rayleigh)</span>
-                </label>
-              </div>
-              <div class="term-math-multi">
-                <div class="term-math-subrow">
-                  <span class="math-prefix">+</span>
-                  <span class="math-label">ε · δ_ray =</span>
-                  <input type="number" id="eq-delta-rayleigh" value="0.1" step="0.02" min="0.0" class="math-input">
-                  <span class="math-symbol">· ẏ₁ · (1 − ẏ₁² +</span>
-                </div>
-                <div class="term-math-subrow subrow-indent">
-                  <span class="math-label">η_ray =</span>
-                  <input type="number" id="eq-eta-rayleigh" value="0.15" step="0.02" min="0.0" class="math-input math-input-sm">
-                  <span class="math-symbol">· ẏ₁⁴)</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- איבר 5: שיכוך לינארי -->
-            <div id="term-gamma" class="term-row term-inactive">
-              <div class="term-header">
-                <label class="term-toggle">
-                  <input type="checkbox" id="toggle-gamma">
-                  <span class="term-tag tag-gamma">5. שיכוך צמיג לינארי</span>
-                </label>
-              </div>
-              <div class="term-math">
-                <span class="math-prefix">+</span>
-                <span class="math-label">γ =</span>
-                <input type="number" id="eq-gamma" value="0.0" step="0.01" min="0.0" class="math-input math-input-sm">
-                <span class="math-symbol">· ẏ₁</span>
-              </div>
-            </div>
-
-            <!-- סקאלת אפסילון -->
-            <div class="term-row term-scale">
-              <div class="term-math">
-                <span class="math-label">סקאלת זמן איטי (ε_scale):</span>
-                <input type="number" id="eq-eps-scale" value="0.001" step="0.0005" class="math-input math-input-sm">
-              </div>
-            </div>
-
           </div>
         </div>
 
-        <!-- תנאי התחלה (IC) -->
+        <!-- 3. תנאי התחלה (IC) -->
         <div class="control-group">
-          <label class="group-title">תנאי התחלה [y1, v1, y2, v2]</label>
+          <label class="group-title">3. תנאי התחלה [y1, v1, y2, v2]</label>
           <div class="input-grid">
             <div class="input-field">
               <label for="param-y1">y₁(0):</label>
@@ -195,9 +99,9 @@
           </div>
         </div>
 
-        <!-- הגדרות פותרן נומרי -->
+        <!-- 4. הגדרות פותרן נומרי -->
         <div class="control-group">
-          <label class="group-title">הגדרות פותרן נומרי</label>
+          <label class="group-title">4. הגדרות פותרן נומרי (Solver)</label>
           <div class="input-row">
             <label for="param-method">שיטת אינטגרציה:</label>
             <select id="param-method" class="input-select">
@@ -208,7 +112,7 @@
           </div>
 
           <div class="input-row toggle-row">
-            <label for="param-adaptive">עצירה אדפטיבית בהתכנסות:</label>
+            <label for="param-adaptive">מצב אדפטיבי (עצירה אוטומטית בהתכנסות):</label>
             <input type="checkbox" id="param-adaptive" checked class="input-toggle">
           </div>
 

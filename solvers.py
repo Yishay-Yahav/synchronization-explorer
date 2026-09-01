@@ -1,6 +1,15 @@
 """
 Coupled Oscillators: Multi-Method & Parallel Batch Solver Engine.
-Supports the unified general nonlinear oscillator equation in Numba JIT & SciPy.
+
+Supported Models:
+- "rayleigh": Velocity-dependent nonlinear damping
+- "vdp": Displacement-dependent nonlinear damping
+- "none": Linear oscillator coupling (no nonlinear damping)
+
+Supported Solver Methods (method):
+- "numba_rk4": Accelerated JIT compiled RK4 (50x-100x faster, default)
+- "dop853": SciPy 8th-order Runge-Kutta (High precision adaptive)
+- "rk45": SciPy 5th-order Runge-Kutta
 """
 
 from __future__ import annotations
@@ -38,39 +47,28 @@ def compute_modal(times: np.ndarray, states: np.ndarray, eps: float):
     return tau, mu0, mu1
 
 
-# --- מנוע JIT מואץ ב-Numba למשוואה המאוחדת ---
+# --- מנוע JIT מואץ ב-Numba (מהירות קוד C) ---
 @numba.njit(fastmath=True)
-def _rk4_step_jit_unified(state, eps_c, eps_s, duff, delta_vdp, eta_vdp, delta_ray, eta_ray, gamma, dt):
-    """צעד RK4 מהיר עבור המשוואה המאוחדת"""
+def _rk4_step_jit(state, eps, delta, eta, duffing, model_id, dt):
+    """צעד בודד של RK4 בקוד מכונה (model_id: 0=none, 1=rayleigh, 2=vdp)"""
     def eval_rhs(s):
         y1, v1, y2, v2 = s[0], s[1], s[2], s[3]
+        c12 = eps * (y1 - y2)
+        c21 = eps * (y2 - y1)
+        duff1 = eps * duffing * (y1**3)
+        duff2 = eps * duffing * (y2**3)
 
-        # 1. צימוד
-        c12 = eps_c * (y1 - y2)
-        c21 = eps_c * (y2 - y1)
+        if model_id == 2:  # vdp
+            nl1 = eps * delta * v1 * (1.0 - y1**2 + eta * y1**4)
+            nl2 = eps * delta * v2 * (1.0 - y2**2 + eta * y2**4)
+        elif model_id == 1:  # rayleigh
+            nl1 = eps * delta * v1 * (1.0 - v1**2 + eta * v1**4)
+            nl2 = eps * delta * v2 * (1.0 - v2**2 + eta * v2**4)
+        else:  # 0 = none / linear
+            nl1 = 0.0
+            nl2 = 0.0
 
-        # 2. דאפינג
-        duff1 = eps_s * duff * (y1**3)
-        duff2 = eps_s * duff * (y2**3)
-
-        # 3. ואן דר פול
-        nl_vdp1 = eps_s * delta_vdp * v1 * (1.0 - y1**2 + eta_vdp * y1**4) if delta_vdp > 0 else 0.0
-        nl_vdp2 = eps_s * delta_vdp * v2 * (1.0 - y2**2 + eta_vdp * y2**4) if delta_vdp > 0 else 0.0
-
-        # 4. ריילי
-        nl_ray1 = eps_s * delta_ray * v1 * (1.0 - v1**2 + eta_ray * v1**4) if delta_ray > 0 else 0.0
-        nl_ray2 = eps_s * delta_ray * v2 * (1.0 - v2**2 + eta_ray * v2**4) if delta_ray > 0 else 0.0
-
-        # 5. שיכוך לינארי
-        damp1 = gamma * v1
-        damp2 = gamma * v2
-
-        dy1 = v1
-        dv1 = -y1 - c12 - duff1 - nl_vdp1 - nl_ray1 - damp1
-        dy2 = v2
-        dv2 = -y2 - c21 - duff2 - nl_vdp2 - nl_ray2 - damp2
-
-        return np.array([dy1, dv1, dy2, dv2])
+        return np.array([v1, -y1 - c12 - duff1 - nl1, v2, -y2 - c21 - duff2 - nl2])
 
     k1 = eval_rhs(state)
     k2 = eval_rhs(state + 0.5 * dt * k1)
@@ -80,7 +78,7 @@ def _rk4_step_jit_unified(state, eps_c, eps_s, duff, delta_vdp, eta_vdp, delta_r
 
 
 @numba.njit(fastmath=True)
-def _numba_integrate_chunk(state, eps_c, eps_s, duff, delta_vdp, eta_vdp, delta_ray, eta_ray, gamma, t_start, t_end, dt, n_points):
+def _numba_integrate_chunk(state, eps, delta, eta, duffing, model_id, t_start, t_end, dt, n_points):
     """אינטגרציה של מקטע שלם בלולאת C מהירה"""
     total_steps = int(np.ceil((t_end - t_start) / dt))
     actual_dt = (t_end - t_start) / total_steps
@@ -98,7 +96,7 @@ def _numba_integrate_chunk(state, eps_c, eps_s, duff, delta_vdp, eta_vdp, delta_
     saved_idx += 1
 
     for step in range(1, total_steps + 1):
-        curr_s = _rk4_step_jit_unified(curr_s, eps_c, eps_s, duff, delta_vdp, eta_vdp, delta_ray, eta_ray, gamma, actual_dt)
+        curr_s = _rk4_step_jit(curr_s, eps, delta, eta, duffing, model_id, actual_dt)
         curr_t = t_start + step * actual_dt
         if step % save_interval == 0 and saved_idx < n_points:
             times[saved_idx] = curr_t
@@ -126,17 +124,23 @@ def _solve_single_ic(
     rk4_dt: float = 0.05,
 ) -> SolutionWindow:
     """פונקציה פנימית: פותרת תנאי התחלה יחיד"""
-    eps_s = system_eq.eps
-    eps_c = system_eq.eps_coupling
-    duff = system_eq.duffing
-    delta_vdp = system_eq.delta_vdp
-    eta_vdp = system_eq.eta_vdp
-    delta_ray = system_eq.delta_rayleigh
-    eta_ray = system_eq.eta_rayleigh
-    gamma = system_eq.gamma
+    eps = getattr(system_eq, "eps", 0.001)
+    rhs_fn = getattr(system_eq, "rhs", system_eq)
+    model = getattr(system_eq, "model", "rayleigh")
 
-    chunk_time = chunk_tau / eps_s
-    max_time = max_tau / eps_s
+    if model in ("vdp", "van_der_pol"):
+        model_id = 2
+    elif model in ("rayleigh", "coupled_rayleigh"):
+        model_id = 1
+    else:
+        model_id = 0
+
+    delta = getattr(system_eq, "delta", 0.1)
+    eta = getattr(system_eq, "eta", 0.15)
+    duffing = getattr(system_eq, "duffing", 0.0)
+
+    chunk_time = chunk_tau / eps
+    max_time = max_tau / eps
     min_time = consecutive * chunk_time
 
     state = np.array(ic, dtype=np.float64)
@@ -151,18 +155,17 @@ def _solve_single_ic(
 
         if method == "numba_rk4":
             t_chunk, y_chunk = _numba_integrate_chunk(
-                state, eps_c, eps_s, duff, delta_vdp, eta_vdp, delta_ray, eta_ray, gamma,
-                t_curr, t_next, rk4_dt, points_per_chunk
+                state, eps, delta, eta, duffing, model_id, t_curr, t_next, rk4_dt, points_per_chunk
             )
         else:
             t_eval = np.linspace(t_curr, t_next, points_per_chunk)
-            sol = solve_ivp(system_eq.rhs, (t_curr, t_next), state, method=method, t_eval=t_eval, rtol=1e-8, atol=1e-10)
+            sol = solve_ivp(rhs_fn, (t_curr, t_next), state, method=method, t_eval=t_eval, rtol=1e-8, atol=1e-10)
             if not sol.success:
                 break
             t_chunk, y_chunk = sol.t, sol.y
 
         last_t, last_y = t_chunk, y_chunk
-        last_tau, last_mu0, last_mu1 = compute_modal(last_t, last_y, eps_s)
+        last_tau, last_mu0, last_mu1 = compute_modal(last_t, last_y, eps)
         state = last_y[:, -1]
         t_curr = t_next
 
@@ -195,6 +198,7 @@ def _solve_single_ic(
     return SolutionWindow(last_t, last_y, last_tau, last_mu0, last_mu1, t_curr, (not adaptive or final_slope < slope_tol), final_slope)
 
 
+# פונקציית מעטפת להרצה בתוך ProcessPoolExecutor
 def _worker_wrapper(args):
     system_eq, ic, kwargs = args
     return _solve_single_ic(system_eq, ic, **kwargs)
@@ -203,18 +207,22 @@ def _worker_wrapper(args):
 def solve(
     system_eq: SystemEquation,
     ics: list[list[float]] | list[float] | np.ndarray,
-    method: str = "numba_rk4",
-    workers: int = 8,
-    adaptive: bool = True,
-    chunk_tau: float = 3.0,
-    max_tau: float = 30.0,
-    slope_tol: float = 2e-5,
-    zero_tol: float = 0.05,
-    consecutive: int = 2,
-    points_per_chunk: int = 1500,
-    rk4_dt: float = 0.05,
+    method: str = "numba_rk4",     # שיטת הפתרון ("numba_rk4", "dop853", "rk45")
+    workers: int = 8,              # מספר המעבדים שיפעלו במקביל (1 עד 8, 16 וכו')
+    adaptive: bool = True,         # האם להשתמש בעצירה אדפטיבית לפי שיפוע
+    chunk_tau: float = 3.0,        # גודל מקטע בזמן איטי
+    max_tau: float = 30.0,         # זמן ריצה מקסימלי בזמן איטי
+    slope_tol: float = 2e-5,       # סף שיפוע להתכנסות
+    zero_tol: float = 0.05,        # סף דעיכה לאפס
+    consecutive: int = 2,          # מספר חלונות רצופים לאימות יציבות
+    points_per_chunk: int = 1500,  # נקודות דיגום לכל חלון
+    rk4_dt: float = 0.05,          # גודל צעד זמן עבור numba_rk4
 ) -> list[SolutionWindow]:
-    """פונקציית הפותרן הראשית והמאוחדת"""
+    """
+    פונקציית הפותרן הראשית והמאוחדת:
+    מקבלת תמיד רשימת תנאי התחלה (נקודה אחת או רשימה של עשרות נקודות),
+    פותרת אותן במקביל לפי מספר המעבדים שנבחר (workers), ומחזירה רשימת תוצאות.
+    """
     raw_ics = np.asarray(ics, dtype=float)
     if raw_ics.ndim == 1:
         ics_list = [raw_ics]
@@ -246,8 +254,8 @@ def solve(
 
 if __name__ == "__main__":
     from equations import get_equations
+    import time
 
-    # בדיקת פתרון למערכת לא מצומדת
-    eq = get_equations(eps_coupling=0.0, delta_rayleigh=0.1)
-    res = solve(eq, [[2.0, 0.0, 0.0, 0.0]])
-    print(f"מערכת לא מצומדת: התכנס ב-t={res[0].convergence_time:.1f}, שיפוע={res[0].slope:.2e}")
+    eq_none = get_equations("none", eps=0.001, delta=0.1, eta=0.15)
+    res_none = solve(eq_none, [[2.0, 0.0, 0.0, 0.0]], method="numba_rk4")
+    print(f"מודל ללא (none): התכנס ב-t={res_none[0].convergence_time:.1f}, שיפוע={res_none[0].slope:.2e}")
