@@ -1,4 +1,5 @@
 """
+python main.py --exp <EXPERIMENT_ID> --res <RESOLUTION> --tau <MAX_TAU> --workers <NUM_CPUS>
 Coupled Oscillators Synchronization Explorer: Automated 8-Experiment Suite (main.py).
 
 Pre-Configured Execution Profiles:
@@ -272,6 +273,7 @@ def run_single_experiment(
     chunk_tau: float = 3.0,
     y_range: tuple[float, float] = (-20.0, 20.0),
     workers: int = 8,
+    adaptive: bool = True,
 ):
     """Runs a single experiment and generates 5 output figures in a dedicated parameter-encoded subfolder."""
     p = exp_config["params"]
@@ -306,6 +308,7 @@ def run_single_experiment(
         max_tau=max_tau,
         chunk_tau=chunk_tau,
         record_evolution=True,
+        adaptive=adaptive,
     )
 
     # 3. Save serialized BasinData object for interactive inspection with slider (overwrites cleanly)
@@ -343,6 +346,7 @@ def run_all_experiments(
     max_tau: float = 100.0,
     chunk_tau: float = 3.0,
     workers: int = 8,
+    adaptive: bool = True,
 ):
     """
     Runs all 8 experiments sequentially.
@@ -367,6 +371,7 @@ def run_all_experiments(
             max_tau=max_tau,
             chunk_tau=chunk_tau,
             workers=workers,
+            adaptive=adaptive,
         )
 
     t_total = time.perf_counter() - t_start
@@ -378,12 +383,52 @@ def run_all_experiments(
 
 def main():
     parser = argparse.ArgumentParser(description="Coupled Oscillators 8-Experiment Batch Runner")
+    parser.add_argument("--exp", nargs="+", type=int, default=None,
+                        help="Specific Experiment ID(s) to run (1-8), e.g. '--exp 3' or '--exp 3 4'")
     parser.add_argument("--profile", nargs="+", default=None,
                         help="Execution Profile(s): '0', '1', '2', '8h', or multiple e.g. '--profile 0 1 2'")
-    parser.add_argument("--res", type=int, default=None, help="Custom grid resolution (e.g. 25)")
-    parser.add_argument("--tau", type=float, default=None, help="Custom max_tau (e.g. 100.0)")
+    parser.add_argument("--res", type=int, default=None, help="Custom grid resolution (e.g. 25, 37, 60)")
+    parser.add_argument("--tau", type=float, default=None, help="Custom max_tau (e.g. 100.0, 400.0)")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel CPU workers (default: 8)")
+    parser.add_argument("--full", action="store_true", help="Disable adaptive early stopping, run to max_tau")
     args = parser.parse_args()
+
+    adaptive = not args.full
+
+    # Direct execution of specific experiment(s) via --exp
+    if args.exp is not None:
+        resolution = args.res if args.res is not None else 37
+        max_tau = args.tau if args.tau is not None else 100.0
+        base_run_dir = f"experiments_res{resolution}x{resolution}_tau{int(max_tau)}"
+        os.makedirs(base_run_dir, exist_ok=True)
+
+        target_exps = [e for e in EXPERIMENTS if e["id"] in args.exp]
+        if not target_exps:
+            print(f"[ERROR] No matching experiment found for IDs: {args.exp}. Available: 1-8.")
+            return
+
+        print("\n" + "#" * 65)
+        print(f"[TARGET RUN] Running {len(target_exps)} Specific Experiment(s): {args.exp}")
+        print(f"[RUN CONFIG] Resolution: {resolution}x{resolution} ({resolution**2} pts/exp)")
+        print(f"[RUN CONFIG] Max Tau: {max_tau}, Workers: {args.workers}")
+        print(f"[RUN ROOT DIR] '{base_run_dir}/'")
+        print("#" * 65)
+
+        t_start = time.perf_counter()
+        for exp in target_exps:
+            run_single_experiment(
+                exp,
+                base_run_dir=base_run_dir,
+                resolution=resolution,
+                max_tau=max_tau,
+                workers=args.workers,
+                adaptive=adaptive,
+            )
+        t_total = time.perf_counter() - t_start
+        print("\n" + "=" * 65)
+        print(f"[TARGET RUN FINISHED] {len(target_exps)} experiment(s) completed in {t_total:.2f}s ({t_total/60:.1f} mins)!")
+        print("=" * 65)
+        return
 
     profiles_to_run = []
 
@@ -398,7 +443,7 @@ def main():
     elif args.res is not None:
         resolution = args.res
         max_tau = args.tau if args.tau is not None else 100.0
-        run_all_experiments(resolution=resolution, max_tau=max_tau, workers=args.workers)
+        run_all_experiments(resolution=resolution, max_tau=max_tau, workers=args.workers, adaptive=adaptive)
         return
     else:
         # Interactive selection menu if run with plain `python main.py`
@@ -435,6 +480,7 @@ def main():
             resolution=prof["resolution"],
             max_tau=prof["max_tau"],
             workers=args.workers,
+            adaptive=adaptive,
         )
 
     t_suite_total = time.perf_counter() - t_suite_start

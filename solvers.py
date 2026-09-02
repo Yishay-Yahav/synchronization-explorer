@@ -188,24 +188,29 @@ def _solve_single_ic(
                 continue
 
             if t_curr >= min_time:
-                dt = last_t - last_t[0]
-                slope0 = np.abs(np.polyfit(dt, np.abs(last_mu0), 1)[0])
-                slope1 = np.abs(np.polyfit(dt, np.abs(last_mu1), 1)[0])
-                final_slope = float(max(slope0, slope1))
+                # Use Coefficient of Variation (CV = std/mean) instead of absolute slope.
+                # True limit cycles have CV < 0.01. Slow exponential decays have CV > 0.10.
+                mean_mu0 = float(np.mean(np.abs(last_mu0)))
+                mean_mu1 = float(np.mean(np.abs(last_mu1)))
+                cv_mu0 = float(np.std(np.abs(last_mu0))) / max(mean_mu0, 1e-12)
+                cv_mu1 = float(np.std(np.abs(last_mu1))) / max(mean_mu1, 1e-12)
+                final_cv = float(max(cv_mu0, cv_mu1))
 
-                if final_slope < slope_tol:
+                if final_cv < 0.02:
                     stable_count += 1
                     if stable_count >= consecutive:
-                        return SolutionWindow(last_t, last_y, last_tau, last_mu0, last_mu1, t_curr, True, final_slope)
+                        return SolutionWindow(last_t, last_y, last_tau, last_mu0, last_mu1, t_curr, True, final_cv)
                 else:
                     stable_count = 0
 
-    dt = last_t - last_t[0]
-    final_slope = float(max(
-        np.abs(np.polyfit(dt, np.abs(last_mu0), 1)[0]),
-        np.abs(np.polyfit(dt, np.abs(last_mu1), 1)[0])
-    ))
-    return SolutionWindow(last_t, last_y, last_tau, last_mu0, last_mu1, t_curr, (not adaptive or final_slope < slope_tol), final_slope)
+    mean_mu0 = float(np.mean(np.abs(last_mu0)))
+    mean_mu1 = float(np.mean(np.abs(last_mu1)))
+    cv_mu0 = float(np.std(np.abs(last_mu0))) / max(mean_mu0, 1e-12)
+    cv_mu1 = float(np.std(np.abs(last_mu1))) / max(mean_mu1, 1e-12)
+    final_cv = float(max(cv_mu0, cv_mu1))
+    
+    # Store final_cv in the 'slope' attribute of SolutionWindow for backward compatibility
+    return SolutionWindow(last_t, last_y, last_tau, last_mu0, last_mu1, t_curr, (not adaptive or final_cv < 0.02), final_cv)
 
 
 def _worker_wrapper(args):
@@ -254,8 +259,19 @@ def solve(
 
     max_workers = min(workers, len(ics_list))
     tasks = [(system_eq, ic, solver_kwargs) for ic in ics_list]
+    
+    results = []
+    total = len(tasks)
+    
+    # We want to print progress roughly 20 times (every 5%), or at least every 10 points
+    print_step = max(1, min(10, total // 20))
+    
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        results = list(executor.map(_worker_wrapper, tasks))
+        for i, res in enumerate(executor.map(_worker_wrapper, tasks), 1):
+            results.append(res)
+            if i % print_step == 0 or i == total:
+                print(f"  [Progress] Solved {i}/{total} points ({(i/total)*100:.1f}%)", end='\r', flush=True)
+        print() # move to next line after loop
 
     return results
 

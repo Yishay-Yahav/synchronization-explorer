@@ -42,6 +42,50 @@ def load_experiment_data(exp_dir: str) -> BasinData:
     return basin_data
 
 
+def choose_experiment_via_dialog(initial_dir: str = ".") -> str | None:
+    """Opens native Windows File Explorer dialog directly in the sync_explorer workspace directory."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+
+        # Always start directly in current sync_explorer directory
+        init_path = os.path.abspath(initial_dir)
+
+        print(f"[EXPLORER] Opening file browser dialog in: {init_path}")
+        selected_file = filedialog.askopenfilename(
+            initialdir=init_path,
+            title="Select 'basin_data.pkl' (or any file inside the experiment folder)",
+            filetypes=[
+                ("Experiment Data / Images", "*.pkl *.png"),
+                ("Pickle Files", "*.pkl"),
+                ("All Files", "*.*"),
+            ],
+        )
+        root.destroy()
+
+        if not selected_file:
+            return None
+
+        # If a file was selected, get its parent directory
+        if os.path.isfile(selected_file):
+            target_dir = os.path.dirname(selected_file)
+        else:
+            target_dir = selected_file
+
+        # Verify basin_data.pkl exists in the directory
+        if os.path.exists(os.path.join(target_dir, "basin_data.pkl")):
+            return target_dir
+
+        return None
+    except Exception as e:
+        print(f"[WARN] GUI dialog error: {e}")
+        return None
+
+
 def interactive_selector() -> str:
     """Displays an interactive CLI menu listing all available saved experiments."""
     exp_dirs = find_all_saved_experiments()
@@ -71,13 +115,20 @@ def interactive_selector() -> str:
 def main():
     parser = argparse.ArgumentParser(description="Interactive Basin of Attraction Viewer")
     parser.add_argument("--path", type=str, default=None, help="Path to experiment subfolder containing basin_data.pkl")
+    parser.add_argument("--cli", action="store_true", help="Force terminal CLI text menu instead of Windows dialog")
     parser.add_argument("--mode", type=str, choices=["attractor", "sync_index", "localization", "time"],
                         default="attractor", help="Display mode for the 2D basin map")
     args = parser.parse_args()
 
+    target_dir = None
+
     if args.path:
         target_dir = args.path
-    else:
+    elif not args.cli:
+        target_dir = choose_experiment_via_dialog()
+
+    if not target_dir:
+        # Fallback to CLI selector if dialog was cancelled or --cli was requested
         target_dir = interactive_selector()
 
     print(f"\n[LOADING] Loading experiment data from: {target_dir} ...")

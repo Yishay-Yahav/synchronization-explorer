@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 .DS_Store
 .venv/
+experiments*/
+*.png
+*.pkl
